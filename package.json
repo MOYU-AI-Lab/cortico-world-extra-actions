@@ -1,0 +1,54 @@
+{
+  "name": "cortico-world-extra-actions",
+  "version": "0.2.5",
+  "private": false,
+  "type": "module",
+  "description": "勾选动作库里的动作，写进形象包的「额外动作拓展」文件夹，让桌宠照着做。",
+  "keywords": [
+    "cortico-world",
+    "coopanion",
+    "figure",
+    "action"
+  ],
+  "license": "MIT",
+  "author": "深深动作库 <1143669795@qq.com>",
+  "contributors": [
+    "奶糖_Net <2967731401@qq.com>"
+  ],
+  "main": "./src/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "src",
+    "dist",
+    "assets",
+    "README.md",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<你的用户名>/cortico-world-extra-actions.git"
+  },
+  "homepage": "https://github.com/<你的用户名>/cortico-world-extra-actions#readme",
+  "bugs": {
+    "url": "https://github.com/<你的用户名>/cortico-world-extra-actions/issues"
+  },
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "深深与额外动作拓展",
+    "webUiClient": "dist/webui.js",
+    "locales": {
+      "zh": {
+        "displayName": "深深与额外动作拓展"
+      },
+      "en": {
+        "displayName": "Shenshen & Extra Actions"
+      }
+    }
+  }
+}
