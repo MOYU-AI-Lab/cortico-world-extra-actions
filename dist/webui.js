@@ -219,8 +219,9 @@ const panel = {
       <div class="ea-bar">
         <select class="ea-sel" data-role="pack"></select>
         <input class="ea-inp" data-role="q" placeholder="搜名字 / id…">
-        <button class="ea-btn" data-act="library">选择动作库…</button>
+        <button class="ea-btn" data-act="library" title="动作库可以放在任意盘，路径会被记住">选择动作库位置…</button>
         <button class="ea-btn" data-act="restore-pack" title="创建一个空的深深形象包（只有身体状态）">恢复空的形象包</button>
+        <button class="ea-btn" data-act="starter-library" title="在你选的文件夹下建一个自带示例动作库">用自带示例建库…</button>
         <span class="ea-lib" data-role="lib"></span>
       </div>
       <div class="ea-note" data-role="note" hidden></div>
@@ -264,7 +265,7 @@ const panel = {
     const REQUIRED = [
       '[data-role=pack]', '[data-role=q]', '[data-role=lib]', '[data-role=note]',
       '[data-role=installed]', '[data-role=chips]', '[data-role=list]', '[data-role=sum]',
-      '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]', '[data-act=restore-pack]',
+      '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]', '[data-act=restore-pack]', '[data-act=starter-library]',
     ];
     const missing = REQUIRED.filter((sel) => !wrap.querySelector(sel));
     if (missing.length) throw new Error('面板模板缺少节点：' + missing.join(', '));
@@ -435,7 +436,8 @@ const panel = {
       if (!state.library.ok) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
-        noteEl.innerHTML = `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点「选择动作库…」指向 <code>深深-动作库</code> 那个文件夹。`
+        noteEl.innerHTML = `还没指定动作库（动作可以放在任意盘）。点上面「选择动作库位置…」指向解压出来的 <code>深深-动作库</code> 文件夹，路径会被记住。`
+          + ` <div class="row" style="margin-top:8px"><button class="ea-btn pri" type="button" data-act="library">选择动作库位置…</button><button class="ea-btn" type="button" data-act="starter-library">用自带示例建一个…</button></div>`
           + ` <br><span class="ea-dim">还没有完整库？下载 <code>https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip</code> 解压后用。</span>`;
         return;
       }
@@ -486,8 +488,8 @@ const panel = {
       installed = new Set(p?.extra?.ids ?? []);
       selected = new Set([...installed].filter((id) => catalog.actions.some((a) => a.id === id && a.word)).slice(0, MAX_SELECTED));
       libEl.textContent = state.library.ok
-        ? `${state.library.count} 段可用` + (state.library.imported ? `（自定义 ${state.library.imported}）` : '')
-        : '动作库未设置';
+        ? `${state.library.count} 段可用` + (state.library.imported ? `（自定义 ${state.library.imported}）` : '') + `　${state.library.dir}`
+        : '动作库未设置（可放在任意盘）';
       renderPack(); renderChips(); renderList(); renderInstalled(); renderSum(); renderNote();
     }
 
@@ -601,6 +603,13 @@ const panel = {
               ? r.added.map((x) => `${x.zh}（${x.frames} 帧 / ${x.seconds}s）`).join('、')
               : (r.skipped.map((x) => `${x.dir}：${x.reason}`).join('；') || '');
           }
+        } else if (act === 'starter-library') {
+          const parent = await ctx.pickPath({ kind: 'directory', title: '选一个盘/文件夹，自带示例动作库会建在它下面的「深深-动作库」里' });
+          if (!parent) return say('没有选目录', true);
+          busy(true); say('正在建…');
+          const r = await ctx.invoke('use-starter-library', [parent]);
+          say((r.created ? '已建好：' : '这个位置已有动作库，直接用：') + r.path);
+          await loadAll();
         } else if (act === 'library') {
           // 协议里 PathPickerOptions.kind 只有 'file' | 'directory'
           const dir = await ctx.pickPath({ kind: 'directory', title: '选择动作库目录（里面要有 actions/）' });

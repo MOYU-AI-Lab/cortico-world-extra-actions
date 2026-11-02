@@ -553,6 +553,8 @@ export function inspect({ packDir, libraryDir, catalog }) {
   if (!libraryDir || !existsSync(libraryDir)) problems.push(`动作库目录不存在：${libraryDir}`);
   const missing = [];
   for (const a of catalog) {
+    // 身体状态段（idle/walk/drag/turn）本来就没有触发词，它们不是"可加的动作"，跳过
+    if (!a.word) continue;
     if (actionProblem(a)) { missing.push(a.id); continue; }
     const dir = join(libraryDir || '', 'actions', a.category, a.id);
     if (!existsSync(dir)) missing.push(a.id);

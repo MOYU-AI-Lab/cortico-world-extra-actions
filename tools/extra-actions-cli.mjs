@@ -83,6 +83,11 @@ if (cmd === 'list') {
   console.log(`加入 ${r.added.length} 个动作${list ? '：' + list : ''}`);
   if (r.skipped.length) console.log('跳过：' + r.skipped.map((s) => `${s.dir}: ${s.reason}`).join('；'));
   console.log(`动作库现在共 ${r.total} 个动作`);
+} else if (cmd === 'set-library') {
+  const dir = opt('dir');
+  if (!dir) throw new Error('需要 --dir <动作库目录>');
+  const r = await w.invoke('picker', 'set-library', [dir]);
+  console.log('动作库已指向:', r.libraryDir);
 } else if (cmd === 'reindex') {
   const r = await w.invoke('picker', 'reindex', []);
   console.log(`已重建 actions/index.js：${r.count} 条${r.changed ? '（有改动）' : '（无变化）'}`);
@@ -103,6 +108,6 @@ if (cmd === 'list') {
   const r = await w.invoke('picker', 'clear', [packId]);
   console.log(`已清空 ${packId}：删掉 ${r.removed} 个模块，` + (r.vocab.restored ? "figure.json 的词表已还原成勾选前的样子" : `撤掉 ${r.vocab.removed.length} 个词`));
 } else {
-  console.log('用法: list | state | save --pack <id> --ids a,b | remove --pack <id> --id <x> | add --dir <path> | prune --pack <id> | reindex | clear --pack <id>');
+  console.log('用法: list | state | save --pack <id> --ids a,b | remove --pack <id> --id <x> | add --dir <path> | prune --pack <id> | reindex | set-library --dir <path> | clear --pack <id>');
   process.exitCode = 1;
 }

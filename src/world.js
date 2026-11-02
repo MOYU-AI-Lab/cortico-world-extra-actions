@@ -13,7 +13,7 @@ import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
-import { ensureStarter, restorePack } from './starter.js';
+import { ensureStarter, installStarterLibrary, restorePack } from './starter.js';
 import { petFigures, petState } from './pet.js';
 
 const ID = 'extra-actions';
@@ -283,6 +283,8 @@ export class ExtraActionsWorld {
         return this.reindex();
       case 'restore-pack':
         return this.restoreShenshenPack();
+      case 'use-starter-library':
+        return this.useStarterLibrary(a[0]);
       case 'save': {
         const packId = this.cleanPackId(a[0]);
         const ids = Array.isArray(a[1]) ? a[1].slice(0, MAX_SELECTION).map((v) => String(v).slice(0, 40)) : [];
@@ -370,6 +372,16 @@ export class ExtraActionsWorld {
     this.saveSettings({ libraryDir: clean });
     this._figuresDir = null;
     return { ok: true, libraryDir: this.libraryDir() };
+  }
+
+  /** 在用户选的目录里建自带的示例动作库，并把动作库指向那里。 */
+  async useStarterLibrary(parentDir) {
+    const lib = typeof parentDir === 'string' ? parentDir.trim() : '';
+    if (!lib) throw new Error('没有选择目录');
+    const r = installStarterLibrary({ pkgDir: join(HERE, '..'), parentDir: lib, log: (m) => this.host?.log?.info?.(m) });
+    this.saveSettings({ libraryDir: r.path });
+    this.bustCatalog();
+    return { ok: true, ...r, libraryDir: r.path };
   }
 
   /** 一键（重新）得到一个空的深深形象包；同时只允许存在一个。 */

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 /**
  * 面板模板自检的回归测试：模板少一个节点时必须当场抛错，而不是留成静默 null。
  *   node test_panel_guard.mjs
@@ -64,5 +65,21 @@ ok(() => {
   if (!String(err.message).includes('data-act=prune')) throw new Error('报错没指出缺哪个节点：' + err.message);
 }, 'a missing template node fails loudly: ' + (err ? err.message : '(no error)'));
 
+/* 第三轮：静态校验 —— 自检清单里的每个选择器都必须真的出现在模板里。
+   这一条能提前抓住"按钮只写在动态 innerHTML 里、模板里没有"这类事故。 */
+{
+  const src = readFileSync(PATH.replace("file:///", "").replace(/\//g, "\\"), "utf8");
+  const start = src.indexOf("wrap.innerHTML = `");
+  const tpl = src.slice(start + "wrap.innerHTML = `".length, src.indexOf("`;", start));
+  const reqBlock = src.slice(src.indexOf("const REQUIRED = ["), src.indexOf("];", src.indexOf("const REQUIRED = [")));
+  const required = [...reqBlock.matchAll(/'\[([^\]]+)\]'/g)].map((m) => m[1]);
+  const absent = required.filter((sel) => {
+    const m = /^data-(role|act)=(.+)$/.exec(sel);
+    if (!m) return !tpl.includes(sel.replace(/^\./, 'class="').replace(/$/, '"'));
+    return !tpl.includes(`data-${m[1]}="${m[2]}"`);
+  });
+  ok(() => { if (!required.length) throw new Error("没解析到自检清单"); }, `parsed ${required.length} required selectors`);
+  ok(() => { if (absent.length) throw new Error("模板里没有：" + absent.join(", ")); }, 'every required selector exists in the static template');
+}
 console.log(fails.length ? `\nFAIL (${fails.length})\n- ${fails.join('\n- ')}` : '\nall checks passed');
 process.exit(fails.length ? 1 : 0);

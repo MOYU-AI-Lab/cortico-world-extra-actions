@@ -127,20 +127,28 @@ export function ensureStarter(o) {
     }
   }
 
-  /* 2) 小动作库 */
-  const srcLib = join(root, 'library');
-  if (existsSync(srcLib) && existsSync(join(srcLib, 'actions'))) {
-    const current = o.libraryDir();
-    if (!current || !existsSync(join(current, 'actions'))) {
-      const dst = join(o.dataDir, 'shenshen-library');
-      if (!existsSync(join(dst, 'actions'))) {
-        cpSync(srcLib, dst, { recursive: true, force: false, errorOnExist: false });
-      }
-      o.saveSettings({ libraryDir: dst });
-      out.library = dst;
-      o.log?.(`自带动作库已铺到 ${dst}`);
-    }
-  }
+  /* 2) 小动作库：**不再自动铺**。动作库放哪个盘由用户决定，
+        面板「选择动作库位置…」或「用自带示例建一个…」都走 installStarterLibrary。 */
 
   return out;
+}
+
+/**
+ * 在用户选的目录下建一个自带的示例动作库（3 段），返回建好的路径。
+ * 目标：`<parentDir>/深深-动作库` —— 名字固定，方便用户之后自己找到。
+ */
+export function installStarterLibrary({ pkgDir, parentDir, log }) {
+  if (typeof parentDir !== 'string' || !parentDir.trim()) throw new Error('没有选择目录');
+  if (!existsSync(parentDir)) throw new Error(`目录不存在：${parentDir}`);
+  const src = join(starterRoot(pkgDir), 'library');
+  if (!existsSync(join(src, 'actions'))) throw new Error('插件里没有自带动作库（assets/starter/library 缺失）');
+
+  const dst = join(parentDir, '深深-动作库');
+  if (existsSync(join(dst, 'actions'))) {
+    log?.(`这个位置已经有动作库了，直接用它：${dst}`);
+    return { created: false, path: dst };
+  }
+  cpSync(src, dst, { recursive: true, force: false, errorOnExist: false });
+  log?.(`自带示例动作库已建在 ${dst}`);
+  return { created: true, path: dst };
 }
