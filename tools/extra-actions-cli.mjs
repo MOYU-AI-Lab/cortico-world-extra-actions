@@ -26,22 +26,16 @@ const opt = (name, fallback = null) => {
 };
 const flag = (name) => argv.includes(`--${name}`);
 
-/** 猜 dataDir：从 --data 给，或从 Coopanion 的默认安装位置。 */
+/** dataDir：--data 或环境变量 COOPANION_DATA；都没有就报用法，不猜。 */
 async function world() {
-  const explicit = opt('data');
-  const guesses = explicit
-    ? [explicit]
-    : [
-        'D:/coopa/Coopanion/data/home/companion/data',
-        'D:/coopa/Coopanion/data',
-      ];
-  for (const dataDir of guesses) {
-    if (explicit || existsSync(dataDir)) {
-      const w = worldMod.default.create({ dataDir, cfg: {} });
-      if (existsSync(join(w.figuresDir(), '..'))) return w;
-    }
+  const explicit = opt('data') || process.env.COOPANION_DATA || '';
+  if (!explicit) throw new Error('需要 --data <...\\home\\companion\\data>（或环境变量 COOPANION_DATA）');
+  if (!existsSync(explicit)) throw new Error(`数据目录不存在：${explicit}`);
+  const w = worldMod.default.create({ dataDir: explicit, cfg: {} });
+  if (!existsSync(join(w.figuresDir(), '..'))) {
+    throw new Error(`不像 Coopanion 的数据目录（没有 figures 上级目录）：${explicit}`);
   }
-  throw new Error('找不到 Coopanion 的数据目录，用 --data <...\\home\\companion\\data> 指定');
+  return w;
 }
 
 const w = await world();

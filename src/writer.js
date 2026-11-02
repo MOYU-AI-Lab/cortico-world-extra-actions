@@ -547,8 +547,6 @@ export function prunePack(packDir) {
 }
 
 /** 体检：包目录 + 库目录能不能用。给面板在保存前提示。 */
-
-/** 体检：包目录 + 库目录能不能用。给面板在保存前提示。 */
 export function inspect({ packDir, libraryDir, catalog }) {
   const problems = [];
   if (!existsSync(join(packDir, 'figure.json'))) problems.push(`包里没有 figure.json：${packDir}`);

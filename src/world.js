@@ -13,6 +13,7 @@ import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
+import { ensureStarter, restorePack } from './starter.js';
 import { petFigures, petState } from './pet.js';
 
 const ID = 'extra-actions';
@@ -21,7 +22,6 @@ const CATALOG_FILE = join(HERE, '..', 'assets', 'catalog.json');
 const PANEL = 'picker';
 /** 保存之后要说的话：插件不碰桌宠，重载交给用户。 */
 const RELOAD_HINT = '保存已生效。去 Coopanion 的装扮页重新点一下该形象，桌宠才会加载新的动作表。';
-/** 分类显示名；导入的自定义动作落在 extra。 */
 /** 模块目录里的 preview.webp 直接转 data URL 当缩略图（不重编码，够用）。 */
 function previewThumb(lib, clip) {
   try {
@@ -60,6 +60,20 @@ export class ExtraActionsWorld {
 
   async start(host) {
     this.host = host;
+    // 第一次启动：把插件自带的入门套装铺到磁盘（已有就什么都不做）
+    try {
+      const seeded = ensureStarter({
+        pkgDir: join(HERE, '..'),
+        figuresDir: () => this.figuresDir(),
+        dataDir: this.dataDir,
+        libraryDir: () => this.libraryDir(),
+        saveSettings: (patch) => this.saveSettings(patch),
+        log: (msg, extra) => host?.log?.info?.(msg, extra),
+      });
+      if (seeded.pack || seeded.library) this.bustCatalog();
+    } catch (e) {
+      host?.log?.warn?.('自带素材没能铺开（不影响已有配置）', { err: String(e) });
+    }
     const c = this.mergedCatalog();
     const imported = c.actions.filter((a) => !this.bundleIds().has(a.id)).length;
     host?.log?.info?.(`额外动作拓展已就绪：${c.count} 个动作（自定义 ${imported}），库 ${this.libraryDir() || '未设置'}`);
@@ -267,6 +281,8 @@ export class ExtraActionsWorld {
         return this.prune(this.cleanPackId(a[0]));
       case 'reindex':
         return this.reindex();
+      case 'restore-pack':
+        return this.restoreShenshenPack();
       case 'save': {
         const packId = this.cleanPackId(a[0]);
         const ids = Array.isArray(a[1]) ? a[1].slice(0, MAX_SELECTION).map((v) => String(v).slice(0, 40)) : [];
@@ -354,6 +370,17 @@ export class ExtraActionsWorld {
     this.saveSettings({ libraryDir: clean });
     this._figuresDir = null;
     return { ok: true, libraryDir: this.libraryDir() };
+  }
+
+  /** 一键（重新）得到一个空的深深形象包；同时只允许存在一个。 */
+  async restoreShenshenPack() {
+    const r = restorePack({
+      pkgDir: join(HERE, '..'),
+      figuresDir: () => this.figuresDir(),
+      log: (msg) => this.host?.log?.info?.(msg),
+    });
+    this.bustCatalog();
+    return r;
   }
 
   /** 由 action.json 重生成 actions/index.js —— 清单和磁盘对不上时的万能修复。 */

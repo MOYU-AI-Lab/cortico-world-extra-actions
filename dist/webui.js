@@ -11,8 +11,8 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const MAX_SELECTED = 300;
 /** 制作人头像（96px webp 的 data URL）。嵌在面板里，不读本地文件、不发网络请求。 */
 const CREDITS = [
-  { name: '丹尼尔（Daniele贤狼赫萝）', role: '形象包机制与插件制作', avatar: 'data:image/webp;base64,UklGRuQEAABXRUJQVlA4INgEAADQFgCdASpgAGAAPmEskkakIqGhJlbb2IAMCWUAyBigyqTAbi3ecmzucUaAu2WW3wU1BTTBDPn0zqZIVQCKJD3BZm2dXNKTvP/EgEhmqV2I8oLIRI9kVaM6Tp4TiiK2yFf8+3liRNzvWqrgsrc4/phjMfPRUh3AzirDyhqRPo6ExNbrxUel3Kl0untfy8b7GsmW/Pq+5LetFwjcIgKMq35Z6esdWQ1XsvfREbkdUhHstqY6BE2dhUzyv5C9zjG4AAD+Cfk0jcSDwc3p0zMJQgW8wSMB2AkhBEvX/8YRbH+wP3s6g//5Z//RD/KLnu5dBUlpvOYnQR9S7VV6U1Uz6JaONNLTZyL8XVvHKvC+cKLUGUoWrd9hCyP7AFu5kmb004Zje51XdOmJIqqSXi92RV85ml/VMBMgYT2T/C/cWm83O4qSE/rWPyx7QBb0sGuyrMWnQFgdI744ta0ZPQRQ78ml5tU+4tDDvXKplrjTBtbOv4211RXTF0HHI5c0Rj5zvpDk7w/KoBLMgMBfSMRKy7+Ox841jdxuwlD1nZQ9S4bBeXA2SFBerCMaQ+7QkxLu5fMkbbAt1OeLDUUAvPJTJhlV48Pyy63r4LJ6aiNkpHY8pfBKvB+5Q8ZAj2jV7JB8KpB9PceuNBXkvWv6W63i7LDVuP40iPA2zMaXcibr+i4kEmjXvvdC6dIz3Hwwnigs5X1Q7Z6Q10KPO8wI9EnplzytJPDEKxVyaUTKOK5h0/PuadddXd8YenUrd/Cz+gmeUD7eWThye7sHGeZPoo5epkl4h3ENvvRJ1/dLN3B9/PGY6E+eFqJU0qgc4dXk+fKAGfDQfQwtc7rsICPKl3XIi5SXJFzvf1PV1lroU2AlgMpXTUOUyONShMTuBIm8Up1B5iY31yts6T1tWH2TsjScAkFvI1uFsZFZEHdVigcKd3VDvu8sODMMviw08z8bPgfFBWfnq+COMp39I53fLvURJ+K99vqsHse/NwNVrFpHtraTC56zFXk+pdNARHIXfpIx+6Uap2GTpM2boFWN/KddY1q3sFnPkZgVd9OWjdHBQd8c0lrqVvW46HZ8FlUP1Zp9gMj+5yq6TXFfeI6WxqeRY3RtyIXD5sjUZD5tgDfyrta8JRdQcYyLlRmIWKLfENjJQET4d49QrZOIXBO+zCFfrcs3dRa9AVXh+4WN8e7xVGw5IBG0afvCGfMkAn36nmJ1hge5t8H9cOy44+Mz28Hft9q7fHWq7SvX1ivTg1rimb4bKU9edzoRsTLL+6wiJ9NbVQBYWEaeuAx7QJjIR7mLaLu27F4ZSCsDxCXPEog09ZmBSYkb88FRaLdYmIrXxVOD3hVniJuQTJ4k33M+vfhse8fdO7D8+U2GVVK29MCb8YjrnFzBVFsjwQRXi/CVo8bi2DrpkD35V2w1a4144fTMt7ypeL/FMT6qo9vXOu59ZzWp72+vUotzBu6jhz8ohjkwcW9oP83x/ZOJpWrDyis3W2kgeAVkOwwzLWV+DZlnObWCQ9eWd1AOMCOCn3EIuzCiietAs7Et95LMSJresrZOIEwTkOXsujs6xZLIny+d2nLW9vxtaJQ9rJEuz63HXRD9m2mkhIfLHv/G0L50rK/6def/rQjaBq17fp9xfNg3WksFa+brpU1gAAAA' },
-  { name: 'Net-ang（奶糖_Net）', role: '制作 · 素材与实现', avatar: 'data:image/webp;base64,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' },
+  { name: 'Daniele贤狼赫萝（丹尼尔）', role: '形象包机制与插件制作', avatar: 'data:image/webp;base64,UklGRuQEAABXRUJQVlA4INgEAADQFgCdASpgAGAAPmEskkakIqGhJlbb2IAMCWUAyBigyqTAbi3ecmzucUaAu2WW3wU1BTTBDPn0zqZIVQCKJD3BZm2dXNKTvP/EgEhmqV2I8oLIRI9kVaM6Tp4TiiK2yFf8+3liRNzvWqrgsrc4/phjMfPRUh3AzirDyhqRPo6ExNbrxUel3Kl0untfy8b7GsmW/Pq+5LetFwjcIgKMq35Z6esdWQ1XsvfREbkdUhHstqY6BE2dhUzyv5C9zjG4AAD+Cfk0jcSDwc3p0zMJQgW8wSMB2AkhBEvX/8YRbH+wP3s6g//5Z//RD/KLnu5dBUlpvOYnQR9S7VV6U1Uz6JaONNLTZyL8XVvHKvC+cKLUGUoWrd9hCyP7AFu5kmb004Zje51XdOmJIqqSXi92RV85ml/VMBMgYT2T/C/cWm83O4qSE/rWPyx7QBb0sGuyrMWnQFgdI744ta0ZPQRQ78ml5tU+4tDDvXKplrjTBtbOv4211RXTF0HHI5c0Rj5zvpDk7w/KoBLMgMBfSMRKy7+Ox841jdxuwlD1nZQ9S4bBeXA2SFBerCMaQ+7QkxLu5fMkbbAt1OeLDUUAvPJTJhlV48Pyy63r4LJ6aiNkpHY8pfBKvB+5Q8ZAj2jV7JB8KpB9PceuNBXkvWv6W63i7LDVuP40iPA2zMaXcibr+i4kEmjXvvdC6dIz3Hwwnigs5X1Q7Z6Q10KPO8wI9EnplzytJPDEKxVyaUTKOK5h0/PuadddXd8YenUrd/Cz+gmeUD7eWThye7sHGeZPoo5epkl4h3ENvvRJ1/dLN3B9/PGY6E+eFqJU0qgc4dXk+fKAGfDQfQwtc7rsICPKl3XIi5SXJFzvf1PV1lroU2AlgMpXTUOUyONShMTuBIm8Up1B5iY31yts6T1tWH2TsjScAkFvI1uFsZFZEHdVigcKd3VDvu8sODMMviw08z8bPgfFBWfnq+COMp39I53fLvURJ+K99vqsHse/NwNVrFpHtraTC56zFXk+pdNARHIXfpIx+6Uap2GTpM2boFWN/KddY1q3sFnPkZgVd9OWjdHBQd8c0lrqVvW46HZ8FlUP1Zp9gMj+5yq6TXFfeI6WxqeRY3RtyIXD5sjUZD5tgDfyrta8JRdQcYyLlRmIWKLfENjJQET4d49QrZOIXBO+zCFfrcs3dRa9AVXh+4WN8e7xVGw5IBG0afvCGfMkAn36nmJ1hge5t8H9cOy44+Mz28Hft9q7fHWq7SvX1ivTg1rimb4bKU9edzoRsTLL+6wiJ9NbVQBYWEaeuAx7QJjIR7mLaLu27F4ZSCsDxCXPEog09ZmBSYkb88FRaLdYmIrXxVOD3hVniJuQTJ4k33M+vfhse8fdO7D8+U2GVVK29MCb8YjrnFzBVFsjwQRXi/CVo8bi2DrpkD35V2w1a4144fTMt7ypeL/FMT6qo9vXOu59ZzWp72+vUotzBu6jhz8ohjkwcW9oP83x/ZOJpWrDyis3W2kgeAVkOwwzLWV+DZlnObWCQ9eWd1AOMCOCn3EIuzCiietAs7Et95LMSJresrZOIEwTkOXsujs6xZLIny+d2nLW9vxtaJQ9rJEuz63HXRD9m2mkhIfLHv/G0L50rK/6def/rQjaBq17fp9xfNg3WksFa+brpU1gAAAA' },
+  { name: '奶糖_Net（Net-ang）', role: '制作 · 素材与实现', avatar: 'data:image/webp;base64,UklGRngLAABXRUJQVlA4IGwLAACwKACdASpgAGAAPmEqkEWkIqGUC48YQAYEsoBf1CP2q8nx7F0IBOzt6Xv95u4+eM9J3+R34DejLPW3wfc/BPyUQzcT/XvqI9seNPer8gtQh1naEd6O/x1HfBXsAfrB6Z/6/wvPvX+q9gX9IeiRoEesfYQ3ZgUBeOWpYVk286N2+O6ezH+YYu0hpCs4/PBiJIIIt7fuE5t5cwPjmgSOXpfFhtqhSrZvDE+Gh/NOCY/EN81q6d/3im15uWM+A4LuSYCHqKve5bZGKvCBUTSfcDhPZFXvLCB1NZ7yWxkjEWFl089eDJJXtpwkpveZOZ8I7f8sDAuRaSWOy5V9a2lZBB3hy1bCjKSeq0GPN/cSfWWe+eEkWydXmOw2gpFCD1EpUar5loJbPbSjluboTHtjClIaUR/4FttI0IYveFFj9NHrHDUJCMwW/zfpdh4812TeAP77YQ4vN2aocQAHyFPv0aUoZSvv4zvFh4Taiptbxu3h7DyBKmwF2QEdZ0rxANVHjm+DS1UnlIjB/AwaL8PnUQ7anF6Jv35gSu1lccbX8klHPauLBfnyMyPedvMqAe0dS5OxPW1QnxZRyOJK6k5p8FfqWUrv1I4PfCqok3+7W05UHHUFljf/3HdCwGiE5smcvJW8KdwmTzkYxfN4cYLcNdYk/Kso6y6BT70K1RVufG9DeCXYSlAlkXlh4KYEXxxDNkFv5E0ajfqBk22pHQK7Rlo3SPaYsFENohprVmhMEBHX07PA3tnmsOpemF3RvsTE/bfXBDIQ8ortZhMciIMJeekY9m3l1Ld8kWhfNdrVnvXyCiUwa4WEUdeXwT8JHx8E5Qg+xQC4Ktkdy7ZSp5bYqST0Wk7d5Y3XusWi+/89SmzmaI5OJ4qYj5ahWTYmQMG2K0jYEXtJbXdMmtEod0Ztqp5Q/WlDJYy6eEGeh1IluTQ10vgmzOasa5JUseSxG15LntQQOwL3D07X+qksOLrV98R4PMVMt8tg+bmRYl8T3owErUED5dBq2/bhwf+XZbRMYBMY/DBazl2U5dgtMbAAdneHCgsPgtdfo4Aq8lsc4jYqF6Bu/kcPGfWqwc8VZx/qyd5oA+vuUf1QpVE+zQvKG13Oy4QOA6E6rsiNs4NU6OquQLwZdEFonZ3YJTafqbB10KQNNU5rxsltIP0As4qoy2XzA3B1gPqGeT2IQsvoNAb1mqE9ObYKZLHeliuju51ChmDbmCl/8SalcQRlhqc6j9ZsSblR1xQetU/X7xygSO72LCy948Wt6G0fkAjv9TKTjMmrpbaQxwb7OTZ2WetLO/kJ7vBaRbvwEs89lkqeHFo4dtpbDVjE3d7CG6ljvF6uVWT0iSdmecEpPuYBEzqN2P6TVe3vDRHaoOAPtd7uekRezFbFoJloCJY9ZJk2GGLefNBHMfEtfouWcUmEfQiFjo43Ij2oeVge0ciPdxcTIhoHlZ5XpdSmY8SYXWwIuiAG4JGxHYQy6E3JwgL/B8o85VXBJyjcGBtaX/CnmJ2QLvKgnH+qlzUGhEdbUm4FvZyLnXqbBXtfiWKT6aKkrmtKpb0HrYnUr9O6ZTwbDfAHS0nJkxsyS1SkhrM9gSfFC9vKiKeCbqk8V1HGNEvzseJ2OJB7pY7KqQYkEvI4ki8NSVGZJsNuWt4A100k+y5hTKB8y0EsZZm3Jue1e50cxkkkgK5Vug2IngNUYRE9CktsJnp8Rgk0ZmyS/WmTWAk2wvISq0jLawULtwZTukCXHzgjuF9YDsd0s0EY2op8TPtLLQW/BBTxd3wD6rxOs4xP+bsBS/ZirUdtKP1VV6MwDVsf3o39oYY1nUO2TerqcTrRyHbw4I9lx0KqqOaSEKBRG/FhywXhtQyN5cXaR8XhC2XaE1YkcVFaoJm2ORpVgKmuoO3TlmnjKvkiGhL/WbmVQ/NsNZbahhbiq8uloeS5ReUpXZ4RU2zozcPZ6jsalhHGSbLK03nj15NmKsUC3/fqksQihUScO3+KxUWPajbnwJCbCxcqcp1a0yGBy29yOR8o04bON2+CFwlfKP1cK7g7iDTy6GBYm7ZTarnFmb7Vii1YOt1JTPQtUYopY3JTDOLrusaOfvY6PK++hOdjPjuyKbHU2WruafvnjkrzX625Dw3EDoQ2INCjiQdsoHMW8T9SfI+xiCu3EuZ8DIIjJMGzVnIbdQZhHrZb0HAHRUYCS3Q7q4HwiYWsl8lya7rM4pJNvmD+OnuxKhvp0hxA3EDVDAOK6QK71/xeSFBGz9vPvDgOQ9EWK8Qynp/xccQfIXd09fqkXy9sjAP4PhxQjD67dhDKnTcniqAt9DoYiFEGjwZF8l28NXbkBOaQE/eQy4d6jsB1OJwPA5/H4RiKwuVGg7XKB741p92Xn/gvqI7IBl+8Qh/2rTXe+hBgtMzZ85juv4X2/PM4nzAuxl5n/VBOZ0X/CE73xM/WvgooIB0Lab7pM4erxChK1oSF8KAyv0tXnvFoL0ZU7nHQaanFYfkpyAnapfI3sNAw6gU7Z9HhzUUotks7ayjprSqMBGl1mrNuUMjwUpjgIqNKkCaK5wOFHYuusaEHnB2vfQ27UsI6Y5Axj769nTWgoXnRJzgepEAD925Umku+LuWm6DPGLz9PC859VcZK4dAEf+HbOs9h+ayiMMkCE2tCcWxs3GLVSqwJdB2ideIkCvxcT1t+S+JTg+3hdGcr1GuxNUa+PnXzj8KeWh7VBeE7xgGsuxU1KPjIPOwR3/rQs5MGiv/4i3Q0aZW/2/Hm/dHnYLjmxH4nHfqCgS9ZVQ/UpPfO1EeM7JYJIGARaf0JrGpZLB+VpK53Hc3CUYOr5SG4hee20KHFXQg+bbQCIxj9S6Llv9hTa7ByTsGFN/RzBjfIOkaSUtqkkJxcMjfGerU+J8isGfZ5I0Vo0vdAISUARsAk4PysspiCYwxL4Rv4eC53f2+zyHiCaMuq1T8aStY3HmLdFu34vUAkbkDYu/pz7SF3NJUJXDKXaiXDmuJ/esE7RV00HGL0ewN8J0npkmE24zv+YojC3SDezWixjQlmWspsXkgl888Hu0A43b4fXnRsVdIuEIi2XXOnncgL6Fs+HAzo9mDEibfBWSLToAu2oa73gEvAMT5BggMm1Nn/EHb45o8wMK6+E5Uo7Rumv+THfmbE7iB3jsEApRZELJOl4Q88Mc5rvHgkQxMmKQPdALSLL3sZmAwFMOqIcQhQ8YXKZjHp15kH+phJ9VG2JXd0PLWREOVJpmElz3CbZgzbPog9gKOgpERishN/Q2wCHE8HFzKIgY5pO4/qLPWP1MPGzJOyi8t2lQoIOfCxGh/7XO2BoQtM7bFzBSJh3AJ5jZLbtfX00KJUkek47aap0RLcPkQ6YgrqpLphBNW6sV6H/fautvOrmWY4vB3vX7TckGnVZbaaq/Ww1ySam/nSAfc7DDOuBxpCUHIyQJvbWfvg0yAyJ56JDJznG0fDN7GEaarvJeIn/uyJB0UE9E9MvIT63ppd5xeGlZqfN2B075KiRT7voj1VQZKrcJZ5SaKmTcoh2A8Kh/ofxWKpyO7iPqXT1kyhzcoOF2b6PmpzsA0o2q6IEVKweq1GiXiparBR8x1XeKZuaRNc2hum61UPfEuVM4ir2egHfxe6JZi9Dcr0n1jqIDAwgJhiIv1zv3ZcDa2J8D3CyFd15Qy7KCvQSa98pUOF5T4mfhC7OVvHLcoHDBuWFa2CCSATkRXo7pRYZvAn+q5uLkX9WdrfpnJbRoR6IlHcwoFr008+2OEtNwHPDusV2rX1N/fyS0DHlOFRuia+Peen4jYi2B5o5BraJK677RPP43/3G5q2DLhoqyYBne6pmQ3pDOFW+rH9trd+aHAR3R9N0Z6TQ9UcCuC/RBDJ3X7nATBMRPkxenccBhUuFEqKz+fHOypwAA==' },
 ];
 
 const mb = (n) => (n >= 1024 * 1024 * 1024 ? `${(n / 1024 / 1024 / 1024).toFixed(2)} GB` : `${(n / 1024 / 1024).toFixed(n >= 100 * 1024 * 1024 ? 0 : 1)} MB`);
@@ -214,13 +214,13 @@ const panel = {
         </div>
         <div class="tools">
           <span class="ea-badge" data-role="badge"><span class="dot"></span>准备中</span>
-          <button class="ea-btn" data-act="reload">重新加载形象</button>
-        </div>
+          </div>
       </div>
       <div class="ea-bar">
         <select class="ea-sel" data-role="pack"></select>
         <input class="ea-inp" data-role="q" placeholder="搜名字 / id…">
         <button class="ea-btn" data-act="library">选择动作库…</button>
+        <button class="ea-btn" data-act="restore-pack" title="创建一个空的深深形象包（只有身体状态）">恢复空的形象包</button>
         <span class="ea-lib" data-role="lib"></span>
       </div>
       <div class="ea-note" data-role="note" hidden></div>
@@ -262,7 +262,7 @@ const panel = {
     const REQUIRED = [
       '[data-role=pack]', '[data-role=q]', '[data-role=lib]', '[data-role=note]',
       '[data-role=installed]', '[data-role=chips]', '[data-role=list]', '[data-role=sum]',
-      '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]',
+      '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]', '[data-act=restore-pack]',
     ];
     const missing = REQUIRED.filter((sel) => !wrap.querySelector(sel));
     if (missing.length) throw new Error('面板模板缺少节点：' + missing.join(', '));
@@ -289,7 +289,7 @@ const panel = {
       const list = (state?.figures ?? []).filter((f) => f.supported && !f.builtin);
       packSel.innerHTML = '';
       if (!list.length) {
-        packSel.appendChild(el('option', null, '没有可写的形象包'));
+        packSel.appendChild(el('option', null, '没有可写的形象包（点「恢复空的形象包」）'));
         packSel.disabled = true;
         return;
       }
@@ -531,7 +531,7 @@ const panel = {
           state = await ctx.invoke('state');
           const p = state.figures?.find((f) => f.id === packId);
           selected = new Set(r.copied.concat(r.skipped).filter((id) => catalog.actions.some((a) => a.id === id)));
-          say(`已写入 ${r.count} 段，${mb(r.bytes)}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}${r.reloaded ? '，桌宠已重新加载' : ''}`);
+          say(`已写入 ${r.count} 段，${mb(r.bytes)}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}；去装扮页重新点一下这个形象才会生效`);
           libEl.textContent = state.library.ok ? `${state.library.count} 段可用` : '动作库未设置';
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
           if (p) p.extra = { ids: [...selected], count: r.count, bytes: r.bytes, updatedAt: r.updatedAt };
@@ -567,6 +567,18 @@ const panel = {
             ? `已删除「${a?.zh ?? id}」，包里没有额外动作了，词表已还原`
             : `已删除「${a?.zh ?? id}」，还剩 ${r.remaining} 段`);
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
+        } else if (act === 'restore-pack') {
+          if (!confirm('在形象包目录里创建一个「空的深深形象包」？\n\n只有 4 段身体状态，没有额外动作、词表空。\n如果已经有同 id 的包，只检查并补齐缺失文件，不会再建第二个。')) return;
+          busy(true); say('正在准备形象包…');
+          const r = await ctx.invoke('restore-pack', []);
+          if (r.created) say('已创建空的深深形象包');
+          else if (r.repaired) say('形象包缺文件，已补齐');
+          else say('形象包已存在，没有重复创建');
+          if (r.duplicates && r.duplicates.length) {
+            say(`另外发现 ${r.duplicates.length} 个重复的同 id 包，请手动删掉：` + r.duplicates.map((p) => String(p).split(/[\\/]/).pop()).join('、'), true);
+          }
+          await loadAll();
+          if (r.dir) { packSel.value = r.dir; renderNote(); renderList(); renderInstalled(); renderSum(); }
         } else if (act === 'add') {
           let dir = null;
           try {
@@ -586,11 +598,6 @@ const panel = {
               ? r.added.map((x) => `${x.zh}（${x.frames} 帧 / ${x.seconds}s）`).join('、')
               : (r.skipped.map((x) => `${x.dir}：${x.reason}`).join('；') || '');
           }
-        } else if (act === 'reload') {
-          if (!packId) return;
-          busy(true);
-          await ctx.invoke('reload', [packId]);
-          say('桌宠已重新加载形象');
         } else if (act === 'library') {
           // 协议里 PathPickerOptions.kind 只有 'file' | 'directory'
           const dir = await ctx.pickPath({ kind: 'directory', title: '选择动作库目录（里面要有 actions/）' });

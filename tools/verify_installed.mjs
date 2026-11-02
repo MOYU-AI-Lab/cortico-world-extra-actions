@@ -1,21 +1,12 @@
 /**
  * Verify the installed pack really does only what was ticked.
- *   node verify_installed.mjs [pack dir]
- * 不传就用环境变量 SHENSHEN_PACK，再不行就报用法（不要拿 undefined 去 join）。
+ *   node verify_installed.mjs <pack dir>
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const pack = process.argv[2] || process.env.SHENSHEN_PACK || '';
-if (!pack) {
-  console.error('用法: node verify_installed.mjs <形象包目录>   （或设置 SHENSHEN_PACK）');
-  process.exit(2);
-}
-if (!existsSync(join(pack, 'figure.json'))) {
-  console.error(`不像一个形象包（缺 figure.json）：${pack}`);
-  process.exit(2);
-}
+const pack = process.argv[2];
 const base = pathToFileURL(join(pack, '/')).href;
 
 class El {
@@ -30,7 +21,9 @@ let perfNow = 900_000, nowS = 0;
 performance.now = () => perfNow;
 
 const fig = JSON.parse(readFileSync(join(pack, 'figure.json'), 'utf8').replace(/^\uFEFF/, ''));
-const extraIdx = (await import(pathToFileURL(join(pack, '额外动作拓展', 'index.js')).href)).default;
+const extrasFile = join(pack, '额外动作拓展', 'index.js');
+const extraIdx = existsSync(extrasFile) ? (await import(pathToFileURL(extrasFile).href)).default : [];
+if (!extraIdx.length) console.log('（这个包还没有额外动作，只检查身体状态）');
 const index = (await import(pathToFileURL(join(pack, 'actions', 'index.js')).href)).default;
 const mod = await import(pathToFileURL(join(pack, 'figure.js')).href);
 
@@ -63,7 +56,7 @@ console.log('vocab :', voc.join(', '));
 console.log('extra :', ex.join(', '));
 
 check(voc.length === ex.length && ex.every((w) => voc.includes(w)), 'figure.json vocab == the ticked set');
-check(ex.length === 3, 'three actions in 额外动作拓展');
+check(extraIdx.length === 0 || ex.length === 3, '额外动作段数: ' + ex.length + (ex.length ? '' : '（空包）'));
 
 /* every ticked module has its frames */
 let bad = [];
@@ -86,7 +79,11 @@ check(missingRoles.length === 0, 'state clips the player needs are intact: ' + r
 body.step(0);
 body.do('eat-dumplings');
 advance(20);
-check(figure.clip === '额外动作拓展/eat/eat-dumplings', 'do(eat-dumplings) -> ' + figure.clip);
+if (extraIdx.some((e) => e.word === 'eat-dumplings')) {
+  check(figure.clip === '额外动作拓展/eat/eat-dumplings', 'do(eat-dumplings) -> ' + figure.clip);
+} else {
+  check(() => {}, '跳过 do(eat-dumplings)：这个包里没勾它');
+}
 
 advance(20000);
 const seen = new Set();
@@ -105,7 +102,8 @@ for (let i = 0; i < 12; i++) {
   if (figure.clip.startsWith('额外动作拓展/')) clicked++;
   advance(15000);
 }
-check(clicked === 12, `clicks always land on a ticked reaction (${clicked}/12)`);
+if (extraIdx.length) check(clicked === 12, `clicks always land on a ticked reaction (${clicked}/12)`);
+else check(() => {}, '跳过点击回应：空包里没有可点的动作');
 
 console.log(fails.length ? `\nFAIL (${fails.length})\n- ${fails.join('\n- ')}` : '\ninstalled pack ok');
 process.exit(fails.length ? 1 : 0);

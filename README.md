@@ -1,6 +1,6 @@
 # 深深与额外动作拓展（Coopanion 扩展）
 
-`cortico-world-extra-actions` · MIT · 作者：丹尼尔（Daniele贤狼赫萝）· 合作：Net-ang（奶糖_Net）
+`cortico-world-extra-actions` · MIT · 作者：Daniele贤狼赫萝 & 奶糖_Net（丹尼尔 / Net-ang）
 发布流程见 [PUBLISH.md](PUBLISH.md)。
 
 把《深深 · 动作库》里的 105 段动作做成一张勾选表：勾中的动作写进形象包的
@@ -163,8 +163,8 @@ export default [
 面板最下面还有一个折叠的 **「制作」**，放着两位制作人的头像与分工（头像以 data URL 嵌在面板里，
 不读本地文件、不发网络请求，默认折叠，不影响日常勾选）：
 
-- **丹尼尔（Daniele贤狼赫萝）** —— 形象包机制与插件制作 · `1143669795@qq.com`
-- **Net-ang（奶糖_Net）** —— 制作 · 素材与实现 · `2967731401@qq.com`
+- **Daniele贤狼赫萝（丹尼尔）** —— 形象包机制与插件制作 · `1143669795@qq.com`
+- **奶糖_Net（Net-ang）** —— 制作 · 素材与实现 · `2967731401@qq.com`
 
 形象包的 `figure.json` 里也记了这两条 `credits`。
 
@@ -173,15 +173,23 @@ export default [
 | 路径 | 作用 |
 |---|---|
 | `src/index.js` | World 定义（`id` / `label` / `defaults` / `create` / `describe`） |
-| `src/world.js` | 面板方法、形象包发现、保存/清空/重载、合并清单、参数校验 |
+| `src/world.js` | 面板方法、形象包发现、保存/清空、扫库清单、参数校验 |
 | `src/writer.js` | 纯落盘逻辑 + 注入面防护（面板和命令行共用） |
-| `src/importer.js` | 「添加更多动作」：校验一套帧、收进动作库、追加清单 |
-| `src/pet.js` | 本地桌宠服务的**只读**客户端（/api/state、/api/figures） |
+| `src/importer.js` | 「添加更多动作」：校验一套帧、收进动作库、重建清单 |
+| `src/starter.js` | 自带素材落地 + 「恢复空的形象包」 |
+| `src/pet.js` | 本地桌宠服务的**只读**客户端（`/api/state`、`/api/figures`） |
 | `dist/webui.js` | 面板（无 import 的纯 ESM，`export default { panels: { picker } }`） |
-| `assets/catalog.json` | 105 个动作的清单 + 缩略图（data URL） |
-| `tools/extra-actions-cli.mjs` | 命令行 |
-| `tools/test_writer.mjs` / `test_security.mjs` / `test_importer.mjs` / `test_blob_path.mjs` | 自测：保存语义、注入面、导入、播放器 |
-| `tools/test_world.mjs` / `verify_installed.mjs` | 对真机：协议应答、装好的包是否只做勾选的 |
-| `tools/install-extension.mjs` | 一键装到 Coopanion |
-
-许可：MIT。素材来自 `MerZlin/dsh-pet-indesktop`（角色与动画），形象包代码与封装来自 DSH-PET 工作区。
+| `assets/catalog.json` | 105 段动作的清单 + 缩略图 |
+| `assets/starter/` | 自带的形象包与示例动作库（首次启动落地） |
+| `assets/icon.webp` | 扩展封面（`cortico.icon`） |
+| `tools/install-extension.mjs` | 装到 Coopanion（拷包 + link 依赖 + junction），需要 `--extensions` |
+| `tools/extra-actions-cli.mjs` | 命令行：list / state / save / remove / clear / add / prune / reindex |
+| `tools/check-registered.mjs` | 自检：宿主能不能按 name 解析到这个包、config 里有没有它 |
+| `tools/verify_installed.mjs` | 对真机：装好的包是不是只做勾选的那些 |
+| `tools/test_writer.mjs` | 保存 / 删除 / 清空 / 瘦身的落盘语义 |
+| `tools/test_security.mjs` | 注入面：路径、白名单、符号链接 |
+| `tools/test_importer.mjs` | 「添加更多动作」 |
+| `tools/test_catalog.mjs` | 清单以磁盘为准、index 可重建 |
+| `tools/test_panel_guard.mjs` | 面板模板缺节点会当场报错 |
+| `tools/test_starter.mjs` | 自带素材的首次落地 |
+| `tools/test_restore.mjs` | 「恢复空的形象包」与查重 |

@@ -1,9 +1,9 @@
 {
   "name": "cortico-world-extra-actions",
-  "version": "0.2.8",
+  "version": "0.3.3",
   "private": false,
   "type": "module",
-  "description": "勾选动作库里的动作，写进形象包的「额外动作拓展」文件夹，让桌宠照着做。",
+  "description": "勾选动作库里的动作，写进形象包的「额外动作拓展」文件夹，让桌宠照着做。自带入门形象包与示例动作，装完即用。",
   "keywords": [
     "cortico-world",
     "coopanion",
@@ -11,7 +11,7 @@
     "action"
   ],
   "license": "MIT",
-  "author": "丹尼尔 <1143669795@qq.com>",
+  "author": "Daniele贤狼赫萝 & 奶糖_Net <1143669795@qq.com>",
   "contributors": [
     "Net-ang <2967731401@qq.com>"
   ],

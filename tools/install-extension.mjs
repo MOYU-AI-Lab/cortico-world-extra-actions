@@ -24,9 +24,14 @@ const opt = (name, fallback) => {
   return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : fallback;
 };
 const NAME = 'cortico-world-extra-actions';
-const extensions = resolve(opt('extensions', 'D:/coopa/Coopanion/data/extensions'));
-const library = opt('library', 'C:/Users/11436/Desktop/深深-动作库');
-const copyLibrary = !argv.includes('--no-copy-library');
+const extensions = resolve(opt('extensions', process.env.COOPANION_EXTENSIONS || ''));
+// 动作库是可选的：不传 --library 就只装插件，不碰 figures
+const library = opt('library', process.env.SHENSHEN_LIBRARY || '');
+const copyLibrary = !!library && !argv.includes('--no-copy-library');
+if (!opt('extensions') && !process.env.COOPANION_EXTENSIONS) {
+  console.error('需要 --extensions <Coopanion/data/extensions>（或环境变量 COOPANION_EXTENSIONS）');
+  process.exit(2);
+}
 
 const say = (s) => console.log(s);
 
