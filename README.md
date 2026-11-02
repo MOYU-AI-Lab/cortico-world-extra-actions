@@ -1,6 +1,6 @@
 # 深深与额外动作拓展（Coopanion 扩展）
 
-`cortico-world-extra-actions` · MIT · 作者：深深动作库 · 合作：奶糖_Net
+`cortico-world-extra-actions` · MIT · 作者：丹尼尔（Daniele贤狼赫萝）· 合作：Net-ang（奶糖_Net）
 发布流程见 [PUBLISH.md](PUBLISH.md)。
 
 把《深深 · 动作库》里的 105 段动作做成一张勾选表：勾中的动作写进形象包的
@@ -163,8 +163,8 @@ export default [
 面板最下面还有一个折叠的 **「制作」**，放着两位制作人的头像与分工（头像以 data URL 嵌在面板里，
 不读本地文件、不发网络请求，默认折叠，不影响日常勾选）：
 
-- **Daniele贤狼赫萝** —— 形象包机制与插件制作
-- **奶糖_Net** —— 制作 · 素材与实现
+- **丹尼尔（Daniele贤狼赫萝）** —— 形象包机制与插件制作 · `1143669795@qq.com`
+- **Net-ang（奶糖_Net）** —— 制作 · 素材与实现 · `2967731401@qq.com`
 
 形象包的 `figure.json` 里也记了这两条 `credits`。
 
