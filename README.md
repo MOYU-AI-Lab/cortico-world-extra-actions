@@ -139,6 +139,14 @@ export default [
 - **可逆**：`figure.json` 只动插件自己加过的词；一键「清空拓展」会删掉整个
   `额外动作拓展/` 并把词撤干净。改动前的原文在 `figure.json.bak-额外动作拓展`。
 
+## 完整动作库
+
+插件自带的是**入门套装**（4 段身体状态 + 3 段示例动作）。全部 **105 段**在单独的压缩包里：
+
+- 下载：<https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip>
+- 解压得到 `深深-动作库/`（约 320 MB，26000 多个帧文件）
+- 面板点「选择动作库…」指向这个文件夹 —— 列表里就会出现全部 105 段，可以随便勾
+
 ## 五、添加更多动作
 
 面板最下面有一个折叠的 **「添加更多动作…」**：选一个文件夹，里面是一整套

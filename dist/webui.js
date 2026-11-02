@@ -236,6 +236,8 @@ const panel = {
             <button class="ea-btn pri" type="button" data-act="add">选择动作文件夹…</button>
             <span data-role="addmsg"></span>
           </div>
+          <div style="margin-top:6px">想一次拿到全部 105 段？下载<b>完整动作库</b>（约 320 MB）：\n            <br><code>https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip</code>\n            <br>解压后点上面「选择动作库…」指到解压出来的 <code>深深-动作库</code> 文件夹即可。\n            <br>（群文件 / 网盘里若有同名 zip，效果一样。）
+            解压后点上面「选择动作库…」指到解压出来的 <code>深深-动作库</code> 文件夹即可。</div>
           <div style="margin-top:6px">可选：同目录放 <code>action.json</code> 指定 <code>{"id":"eat-burger","zh":"吃汉堡","category":"extra","fps":24}</code>；不给就按目录名自动生成、24 fps。</div>
         </div>
       </details>
@@ -433,7 +435,8 @@ const panel = {
       if (!state.library.ok) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
-        noteEl.innerHTML = `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点「选择动作库…」指向 <code>深深-动作库</code> 那个文件夹。`;
+        noteEl.innerHTML = `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点「选择动作库…」指向 <code>深深-动作库</code> 那个文件夹。`
+          + ` <br><span class="ea-dim">还没有完整库？下载 <code>https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip</code> 解压后用。</span>`;
         return;
       }
       if (!p) {
