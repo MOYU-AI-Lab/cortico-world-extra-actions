@@ -95,7 +95,22 @@ check(() => assert.equal(mod.default[0].word, 'evil-name'), 'the manifest still 
 check(() => assert.equal(mod.default[0].name.includes('\n'), false), 'control characters are stripped from the name');
 check(() => assert.equal(globalThis.pwned, undefined), 'importing it executes nothing');
 
-/* 5. 清空只动 额外动作拓展 自己 */
+/* 5. 写进角色包的东西不带本机路径：这个文件夹会跟着包一起被分享 */
+const walkPack = (dir, out = []) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkPack(p, out); else out.push(p);
+  }
+  return out;
+};
+const leaks = walkPack(join(pack, '额外动作拓展'))
+  .filter((f) => /\.(json|js|md)$/.test(f))
+  .flatMap((f) => readFileSync(f, 'utf8').split(/\r?\n/)
+    .filter((line) => /[A-Za-z]:[\\/]|^\s*"?(library|libraryDir)"?\s*:/.test(line) && !/w3\.org/.test(line))
+    .map((line) => `${f.split(/[\\/]/).pop()}: ${line.trim().slice(0, 80)}`));
+check(() => assert.deepEqual(leaks, []), 'no absolute path or library path is written into the pack (' + leaks.join(' | ') + ')');
+
+/* 6. 清空只动 额外动作拓展 自己 */
 writeFileSync(join(pack, '额外动作拓展', 'keep.txt'), 'x');
 W.clear(pack, [good], 'shenshen-test');
 check(() => assert.equal(existsSync(join(pack, '额外动作拓展')), false), 'clear removes the folder');

@@ -1,10 +1,13 @@
 # 深深与额外动作拓展（Coopanion 扩展）
 
 `cortico-world-extra-actions` · MIT · 作者：Daniele贤狼赫萝 & 奶糖_Net（丹尼尔 / Net-ang）
-发布流程见 [PUBLISH.md](PUBLISH.md)。
+发布流程（打 tag、`npm publish`）写在仓库根目录的 `PUBLISH.md` 里，不随包分发。
 
 把《深深 · 动作库》里的 105 段动作做成一张勾选表：勾中的动作写进形象包的
 `额外动作拓展/` 文件夹，桌宠照着做 —— 待机会轮播、点她会触发、重启后 bot 也能点名。
+
+素材全是 **640×360 高清**：动作库一段一个 `anim.webp`（整段动图，加载快、不逐帧换图），
+插件自带的示例形象包（4 段身体状态 + 3 段示例动作）也是同一套高清，新装的人第一眼就不糊。
 
 - 插件形态：Cortico World（`kind: world`, `api: 6`），面板在 Coopanion 的扩展页里；显示名 **深深与额外动作拓展**
 - 数据落点：`<形象包>/额外动作拓展/`（桌宠读的东西）+ `worlds.extra-actions.libraryDir`（走 `WorldContext.persist` 存进 config.json）
@@ -46,17 +49,29 @@
 
 ## 一、装
 
-### 一键
+### 方式 A：npm 装（推荐）
 
 ```bat
-node tools/install-extension.mjs
+cd "<Coo 安装目录>\data\extensions"
+npm install cortico-world-extra-actions
 ```
 
-它会：把本目录拷到 `D:\coopa\Coopanion\data\extensions\vendor\cortico-world-extra-actions\`，
+Coopanion 启动时会自己扫 `data\extensions\node_modules`，装完**重启 Coopanion** 就行，
+不需要额外脚本（`install-extension.mjs` 只服务于下面这种方式）。
+包里 `dependencies` 只有 `cortico-world-extra-actions` 这一条，不会动别的扩展。
+
+### 方式 B：拿 zip / 源码目录（离线、要改代码时用）
+
+```bat
+node tools/install-extension.mjs --extensions "<Coo 安装目录>\data\extensions"
+:: 或先设环境变量 COOPANION_EXTENSIONS
+```
+
+它会：把本目录拷到 `<extensions>\vendor\cortico-world-extra-actions\`，
 在 `data\extensions\package.json` 里加一条 `link:` 依赖（先备份 `package.json.bak-extra-actions`），
 再建一个 `node_modules` 联接。**然后重启 Coopanion**。
 
-### 手动三步
+手动做同样三步：
 
 1. 把整个文件夹拷到 `...\data\extensions\vendor\cortico-world-extra-actions\`
 2. `data\extensions\package.json` 的 `dependencies` 里加一行：
@@ -66,19 +81,38 @@ node tools/install-extension.mjs
 
 重启后，Coopanion 的扩展页里会出现「额外动作拓展」。
 
+> `tools/` 只随 npm 包和 zip 一起发，仓库里也有；`node tools/extra-actions-cli.mjs` 那套命令行
+> 两种装法都能用。
+
 ## 二、用
 
 面板里：
 
-1. 上方选一个**可写**的形象包（只有会读 `额外动作拓展/` 的播放器才列出来 —— 目前是
+1. 上方选一个**可写**的角色包（只有会读 `额外动作拓展/` 的播放器才列出来 —— 目前是
    《深深 · 动作库》`shenshen-actions`，以及打了对应补丁的深深）。
 2. 左下的分类芯片 + 搜索框筛动作；点一行就勾上/取消。
-3. 右下「保存到形象包」。
+3. 右下「保存随机列表」。
+
+**列表永远是完整的一套固定目录（105 条）**，跟库里有没有素材无关：
+
+- 库里有的那几条正常显示、可以勾
+- 库里还没有的：缩略图发灰、标签写「库里没有 · 缺帧」、复选框点不动
+- 每一条鼠标悬停都会显示它的**固定目录**（`actions/<分类>/<id>`），方便你照着往库里补
+- 底部汇总：`清单 105 条：库里 N · 缺 M`
+
+四个库/包相关的按钮：
+
+| 按钮 | 作用 |
+|---|---|
+| 选择动作库位置… | 手动指一个已有的动作库目录（路径会被记住） |
+| 用自带示例建库… | 在你会选的目录下建 `<你选的目录>\深深-动作库`（3 段示例）并设为当前库 |
+| 自动寻找动作库… | 把本机像动作库的目录扫出来列成候选，点一行就切过去 |
+| 建立空的角色包（选位置） | 建一个只有 4 段身体状态、词表空、没有额外动作的空角色包，放哪由你选 |
 
 保存时它做的事：
 
-- 勾中的模块：从动作库把 `f_0001.webp…` + `preview.webp` + `action.json` 拷进
-  `<包>/额外动作拓展/<分类>/<id>/`（已经拷过的不重复拷）
+- 勾中的模块：从动作库把整段动画（高清单文件 `anim.webp`，或帧序列 `f_0001.webp…`）+
+  `preview.webp` + `action.json` 拷进 `<包>/额外动作拓展/<分类>/<id>/`（已经拷过的不重复拷）
 - 取消勾选的：删掉对应目录
 - 重写 `额外动作拓展/index.js`（桌宠 import 的那份清单）、`index.json`、`README.md`
 - **把 `figure.json` 的动作词裁成你勾的这些**：勾中的加进去，没勾的动作词撤掉（表情、非动作条目一个字不动）。
@@ -109,7 +143,8 @@ node tools\extra-actions-cli.mjs clear --pack shenshen-actions
 ├─ README.md      这一份是谁写的、什么时候、勾了什么
 ├─ .managed.json  插件管过哪些动作、加过哪些词（取消勾选和恢复时用）
 └─ eat/eat-dumplings/
-   ├─ f_0001.webp … f_0241.webp   640×360，24 fps
+   ├─ anim.webp                   640×360，24 fps，整段一个文件（推荐，高清）
+   │   （或者 f_0001.webp … f_0241.webp 帧序列，老格式同样认）
    ├─ preview.webp
    └─ action.json
 ```
@@ -119,16 +154,21 @@ node tools\extra-actions-cli.mjs clear --pack shenshen-actions
 ```js
 export default [
   { word: "eat-dumplings", clip: "额外动作拓展/eat/eat-dumplings", frames: 241, fps: 24,
-    seconds: 10.042, name: "吃饺子", category: "eat", noMirror: false, reaction: false, random: true },
+    seconds: 10.042, name: "吃饺子", category: "eat", anim: true,
+    noMirror: false, reaction: false, random: true },
 ];
 ```
+
+`anim: true` 告诉播放器「这个目录是一个整段动图」，它就直接挂一个 `<image>` 让浏览器自己循环，
+不再逐帧换 `src`。没有这个字段也认：播放器会先探一下 `anim.webp` 在不在。
 
 播放器把这一份并到 `actions/index.js` 后面（同名词以这份为准），`word` 不为空的登记进词表。
 所以只要播放器认这个格式，**换一个形象包也能直接复用这个文件夹**。
 
 ## 四、限制与边界
 
-- **只支持帧序列播放器**：入口 `figure.js` 里得出现 `额外动作拓展` 或 `actions/index.js`。
+- **只支持帧序列播放器**：入口 `figure.js` 里得出现 `额外动作拓展` 或 `actions/index.js`
+  （单文件 `anim.webp` 和帧序列两种模块都认）。
   《深深 · 动作库》和本仓库配套的那个播放器可以；早先只认 `ext/clips.js` 的补丁、以及 horo /
   clawd 这些别的角色都不行（面板里不会列出来）。
 - **帧画的是深深**：这是整段画好的 640×360 立绘，不是分层部件。加进别的角色会穿帮，
@@ -136,16 +176,27 @@ export default [
 - **状态类动作不勾**：`state-idle / state-walk / state-drag / look-around` 是身体的待机、走路、
   被拎起和转向，勾了没用（它们本来就在包里）。
 - **只写可写的包**：Coo / 鲸鱼这些内置包不会被列出来。
-- **可逆**：`figure.json` 只动插件自己加过的词；一键「清空拓展」会删掉整个
+- **可逆**：`figure.json` 只动插件自己加过的词；一键「清空随机动作列表」会删掉整个
   `额外动作拓展/` 并把词撤干净。改动前的原文在 `figure.json.bak-额外动作拓展`。
 
-## 完整动作库
+## 动作库放哪（固定，不用另外下载）
 
-插件自带的是**入门套装**（4 段身体状态 + 3 段示例动作）。全部 **105 段**在单独的压缩包里：
+动作库就是**一个固定的文件夹**，结构固定：
 
-- 下载：<https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip>
-- 解压得到 `深深-动作库/`（约 320 MB，26000 多个帧文件）
-- 面板点「选择动作库…」指向这个文件夹 —— 列表里就会出现全部 105 段，可以随便勾
+```
+<动作库>/
+└─ actions/
+   ├─ index.js                    清单（可由 action.json 重建）
+   └─ <分类>/<id>/                分类与 id 都在白名单内
+      ├─ action.json
+      ├─ f_0001.webp …
+      └─ preview.webp（可选）
+```
+
+- 首次启用时插件把自带的示例库铺到 `<dataDir>\shenshen-library`，路径记在
+  `config.json` 的 `worlds.extra-actions.libraryDir`，面板上直接显示
+- 想换位置或换一个库：点「自动寻找动作库…」让它自己扫出来，或用「选择动作库…」手动指
+- **不需要**去任何地方下载动作库；动作不够就点「添加更多动作…」自己收进来
 
 ## 五、添加更多动作
 
@@ -157,7 +208,7 @@ export default [
 2. 按「帧数 ÷ fps」算时长，写一个 `action.json`；
 3. 往 `actions/index.js` 追加一行 —— 桌宠的播放器就认它。
 
-收进来之后，这些动作和自带的 105 段一样出现在上面的列表里，可以勾选、保存到形象包。
+收进来之后，这些动作和自带的 105 段一样出现在上面的列表里，可以勾选、保存随机列表。
 可选在同目录放 `action.json` 指定 `{"id":"eat-burger","zh":"吃汉堡","category":"extra","fps":24}`；
 不给就按目录名生成、24 fps。
 
@@ -184,7 +235,7 @@ export default [
 | `src/world.js` | 面板方法、形象包发现、保存/清空、扫库清单、参数校验 |
 | `src/writer.js` | 纯落盘逻辑 + 注入面防护（面板和命令行共用） |
 | `src/importer.js` | 「添加更多动作」：校验一套帧、收进动作库、重建清单 |
-| `src/starter.js` | 自带素材落地 + 「恢复空的形象包」 |
+| `src/starter.js` | 自带素材落地 + 「建立空的角色包」 |
 | `src/pet.js` | 本地桌宠服务的**只读**客户端（`/api/state`、`/api/figures`） |
 | `dist/webui.js` | 面板（无 import 的纯 ESM，`export default { panels: { picker } }`） |
 | `assets/catalog.json` | 105 段动作的清单 + 缩略图 |
@@ -200,4 +251,4 @@ export default [
 | `tools/test_catalog.mjs` | 清单以磁盘为准、index 可重建 |
 | `tools/test_panel_guard.mjs` | 面板模板缺节点会当场报错 |
 | `tools/test_starter.mjs` | 自带素材的首次落地 |
-| `tools/test_restore.mjs` | 「恢复空的形象包」与查重 |
+| `tools/test_restore.mjs` | 「建立空的角色包」与查重 |

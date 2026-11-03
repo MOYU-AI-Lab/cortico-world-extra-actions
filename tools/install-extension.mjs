@@ -2,10 +2,10 @@
 /**
  * 把「额外动作拓展」装进本机 Coopanion，并（可选）把动作库放进 figures。
  *
- *   node tools/install-extension.mjs [--extensions DIR] [--library DIR] [--no-copy-library]
+ *   node tools/install-extension.mjs --extensions <DIR> [--library <动作库目录>] [--no-copy-library]
  *
- * --extensions 默认 D:\coopa\Coopanion\data\extensions
- * --library    默认 C:\Users\11436\Desktop\深深-动作库；给了就把整个动作库拷成 figures\shenshen-actions
+ * --extensions 必填：Coo 的 <安装目录>\data\extensions，也可以用 COOPANION_EXTENSIONS
+ * --library    可选：给了才把那个动作库拷成 figures\shenshen-actions，也可以用 SHENSHEN_LIBRARY
  *
  * 做的事：
  *   1. 拷本包到 <extensions>/vendor/cortico-world-extra-actions（不含 node_modules）

@@ -40,34 +40,49 @@ function framesIn(dir) {
   } catch { return []; }
 }
 
-/** 一个模块目录的体检 + 元数据；返回 { error } 或 { ok }。 */
-function inspectModule(dir, existingIds) {
+/** 一个模块目录的体检 + 元数据；返回 { error } 或 { ok }。`fixedCategory(id)` 用来把目录名钉死在清单上。 */
+function inspectModule(dir, existingIds, fixedCategory = null) {
+  const meta0 = readJson(join(dir, 'action.json'), null) || {};
   const frames = framesIn(dir);
-  if (frames.length < 2) return { error: '里面没有 f_0001.webp… 这样的帧（至少 2 张）' };
-  if (frames.length > MAX_FRAMES) return { error: `帧太多（${frames.length}，上限 ${MAX_FRAMES}）` };
+  /* 单文件动画模块：一个 anim.webp 顶整段（高清库用的就是这种） */
+  const animSt = lstatSync(join(dir, 'anim.webp'), { throwIfNoEntry: false });
+  const single = !!animSt && animSt.isFile();
 
   let size = 0;
   let dims = null;
-  for (const name of frames) {
-    const full = join(dir, name);
-    const st = lstatSync(full, { throwIfNoEntry: false });
-    if (!st) return { error: `读不到 ${name}` };
-    if (st.isSymbolicLink()) return { error: `${name} 是符号链接，拒绝` };
-    if (!st.isFile()) return { error: `${name} 不是普通文件` };
-    if (st.size <= 0 || st.size > MAX_FRAME_BYTES) return { error: `${name} 大小异常（${st.size} 字节）` };
-    size += st.size;
-    if (!dims) {
-      const head = readFileSync(full).subarray(0, 40);
-      dims = webpSize(head);            // 只读头，别为了一张图把整个文件解出来
-      if (!dims) return { error: `${name} 不是 webp` };
+  if (single) {
+    if (animSt.isSymbolicLink()) return { error: 'anim.webp 是符号链接，拒绝' };
+    if (animSt.size <= 0 || animSt.size > MAX_MODULE_BYTES) return { error: `anim.webp 大小异常（${animSt.size} 字节）` };
+    size = animSt.size;
+    dims = webpSize(readFileSync(join(dir, 'anim.webp')).subarray(0, 40));
+    if (!dims) return { error: 'anim.webp 不是 webp' };
+  } else {
+    if (frames.length < 2) return { error: '里面没有 f_0001.webp… 这样的帧（至少 2 张）' };
+    if (frames.length > MAX_FRAMES) return { error: `帧太多（${frames.length}，上限 ${MAX_FRAMES}）` };
+    for (const name of frames) {
+      const full = join(dir, name);
+      const st = lstatSync(full, { throwIfNoEntry: false });
+      if (!st) return { error: `读不到 ${name}` };
+      if (st.isSymbolicLink()) return { error: `${name} 是符号链接，拒绝` };
+      if (!st.isFile()) return { error: `${name} 不是普通文件` };
+      if (st.size <= 0 || st.size > MAX_FRAME_BYTES) return { error: `${name} 大小异常（${st.size} 字节）` };
+      size += st.size;
+      if (!dims) {
+        const head = readFileSync(full).subarray(0, 40);
+        dims = webpSize(head);            // 只读头，别为了一张图把整个文件解出来
+        if (!dims) return { error: `${name} 不是 webp` };
+      }
     }
+    if (size > MAX_MODULE_BYTES) return { error: `整个模块超过 ${MAX_MODULE_BYTES / 1024 / 1024} MB` };
   }
-  if (size > MAX_MODULE_BYTES) return { error: `整个模块超过 ${MAX_MODULE_BYTES / 1024 / 1024} MB` };
 
-  const meta = readJson(join(dir, 'action.json'), null) || {};
+  const meta = meta0;
   const wantId = typeof meta.id === 'string' ? meta.id : '';
   const baseId = SAFE_ID.test(wantId) ? wantId : slugOf(meta.id || basename(dir));
-  const category = SAFE_CAT.test(String(meta.category ?? '')) ? String(meta.category) : NEW_CATEGORY;
+  // 目录固定：清单里已有的 id 一律用它登记的分类，保证落在 actions/<固定分类>/<id>/
+  const fixed = typeof fixedCategory === 'function' ? fixedCategory(baseId) : null;
+  const category = SAFE_CAT.test(String(fixed ?? '')) ? String(fixed)
+    : SAFE_CAT.test(String(meta.category ?? '')) ? String(meta.category) : NEW_CATEGORY;
   const zh = cleanLabel(meta.zh || meta.name || basename(dir)) || basename(dir);
   const fps = Number.isFinite(meta.fps) && meta.fps > 0 && meta.fps <= 60 ? Math.round(meta.fps) : 24;
 
@@ -76,16 +91,22 @@ function inspectModule(dir, existingIds) {
   while (existingIds.has(id)) { id = `${baseId || 'extra'}-${n++}`.slice(0, 32); }
   if (!SAFE_ID.test(id)) id = `extra-${Date.now().toString(36)}`;
 
+  // 单文件模块没有帧文件，帧数按 action.json 声明（没有就按 241 的惯例）
+  const frameCount = single
+    ? (Number(meta.frames) > 0 ? Math.min(Number(meta.frames), MAX_FRAMES) : 241)
+    : frames.length;
+
   return {
     ok: {
       id,
       zh: zh.slice(0, 32),
       category,
       fps,
-      frames: frames.length,
-      seconds: Math.round((frames.length / fps) * 1000) / 1000,
+      frames: frameCount,
+      seconds: Math.round((frameCount / fps) * 1000) / 1000,
       bytes: size,
-      files: frames,
+      files: single ? ['anim.webp'] : frames,
+      single,
       dims,
       noMirror: meta.noMirror === true,
       reaction: meta.reaction === true,
@@ -118,13 +139,16 @@ function webpSize(buf) {
   return null;
 }
 
-/** 源目录下的候选模块：自己就是一组帧，或者一层子目录各是一组。 */
+/** 一个目录是不是"一个动作模块"：帧序列（f_NNNN）或单文件动画（anim.webp）都算。 */
+const looksLikeModule = (dir) => framesIn(dir).length > 0 || existsSync(join(dir, 'anim.webp'));
+
+/** 源目录下的候选模块：自己就是一个模块，或者一层子目录各是一个模块。 */
 function candidatesIn(sourceDir) {
-  if (framesIn(sourceDir).length) return [sourceDir];
+  if (looksLikeModule(sourceDir)) return [sourceDir];
   const out = [];
   for (const e of readdirSync(sourceDir, { withFileTypes: true })) {
     if (!e.isDirectory() || e.name.startsWith('.')) continue;
-    if (framesIn(join(sourceDir, e.name)).length) out.push(join(sourceDir, e.name));
+    if (looksLikeModule(join(sourceDir, e.name))) out.push(join(sourceDir, e.name));
   }
   return out;
 }
@@ -146,6 +170,7 @@ export function scanLibrary(libraryDir) {
       if (!meta || typeof meta.id !== 'string') continue;
       const frames = Number(meta.frames) > 0 ? Number(meta.frames) : framesIn(dir).length;
       const fps = Number(meta.fps) > 0 ? Number(meta.fps) : 24;
+      const single = existsSync(join(dir, 'anim.webp'));      // 单文件动画模块（高清库是这种格式）
       out.set(meta.id, {
         ...meta,
         category: SAFE_CAT.test(String(meta.category ?? '')) ? String(meta.category) : cat.name,
@@ -153,6 +178,7 @@ export function scanLibrary(libraryDir) {
         clip: `actions/${cat.name}/${mod.name}`,
         frames,
         fps,
+        anim: single || meta.anim === true,
         seconds: Number(meta.seconds) > 0 ? Number(meta.seconds) : Math.round((frames / fps) * 1000) / 1000,
       });
     }
@@ -171,6 +197,7 @@ function indexOrder(libraryDir) {
 const indexLine = (e) => `  { id: ${JSON.stringify(e.id)}, zh: ${JSON.stringify(e.zh)}, category: ${JSON.stringify(e.category)},`
   + ` clip: ${JSON.stringify(e.clip)}, frames: ${Number(e.frames)}, fps: ${Number(e.fps)}, seconds: ${Number(e.seconds)},`
   + ` word: ${JSON.stringify(e.word ?? null)}, say: ${JSON.stringify(e.say ?? null)}, roles: ${JSON.stringify(e.roles ?? [])},`
+  + ` anim: ${e.anim === true ? 'true' : 'false'},`
   + ` noMirror: ${e.noMirror ? 'true' : 'false'}, reaction: ${e.reaction ? 'true' : 'false'}, random: ${e.random === false ? 'false' : 'true'} },`;
 
 /**
@@ -194,9 +221,14 @@ export function rebuildIndex(libraryDir) {
 }
 
 /**
- * @param {{ sourceDir: string, libraryDir: string, existingIds?: Set<string>, thumbFor?: (files: string[], dir: string) => string|null }} o
+ * @param {{
+ *   sourceDir: string, libraryDir: string, existingIds?: Set<string>,
+ *   thumbFor?: (files: string[], dir: string) => string|null,
+ *   fixedCategory?: (id: string) => string|null,
+ * }} o
+ * `fixedCategory`：清单里登记过的 id → 它固定该落在哪个分类目录；给了就优先于 action.json 里的分类。
  */
-export function addModules({ sourceDir, libraryDir, existingIds = new Set(), thumbFor = null }) {
+export function addModules({ sourceDir, libraryDir, existingIds = new Set(), thumbFor = null, fixedCategory = null }) {
   if (typeof sourceDir !== 'string' || !isAbsolute(sourceDir)) throw new Error(`源目录要是绝对路径：${sourceDir}`);
   if (typeof libraryDir !== 'string' || !isAbsolute(libraryDir)) throw new Error('动作库目录不合法');
   if (!existsSync(sourceDir)) throw new Error(`目录不存在：${sourceDir}`);
@@ -211,7 +243,7 @@ export function addModules({ sourceDir, libraryDir, existingIds = new Set(), thu
   const skipped = [];
   const ids = new Set(existingIds);
   for (const dir of dirs) {
-    const r = inspectModule(dir, ids);
+    const r = inspectModule(dir, ids, fixedCategory);
     if (r.error) { skipped.push({ dir: relative(sourceDir, dir) || '.', reason: r.error }); continue; }
     const m = r.ok;
     const dst = join(actionsRoot, m.category, m.id);
@@ -219,9 +251,16 @@ export function addModules({ sourceDir, libraryDir, existingIds = new Set(), thu
     if (existsSync(dst)) { skipped.push({ dir: m.id, reason: '库里已经有同名模块' }); continue; }
 
     mkdirSync(dst, { recursive: true });
-    m.files.forEach((name, i) => {
-      copyFileSync(join(dir, name), join(dst, `f_${String(i + 1).padStart(4, '0')}.webp`));
-    });
+    if (m.single) {
+      // 单文件动画：原样搬一个 anim.webp，不拆帧
+      copyFileSync(join(dir, 'anim.webp'), join(dst, 'anim.webp'));
+      const preview = join(dir, 'preview.webp');
+      if (existsSync(preview)) copyFileSync(preview, join(dst, 'preview.webp'));
+    } else {
+      m.files.forEach((name, i) => {
+        copyFileSync(join(dir, name), join(dst, `f_${String(i + 1).padStart(4, '0')}.webp`));
+      });
+    }
     const thumb = thumbFor ? thumbFor(m.files, dir) : null;
     const entry = {
       id: m.id,
@@ -233,6 +272,7 @@ export function addModules({ sourceDir, libraryDir, existingIds = new Set(), thu
       frames: m.frames,
       fps: m.fps,
       seconds: m.seconds,
+      anim: !!m.single,
       word: m.id,
       roles: [],
       noMirror: m.noMirror,

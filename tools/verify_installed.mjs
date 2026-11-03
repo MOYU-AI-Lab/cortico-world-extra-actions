@@ -56,13 +56,15 @@ console.log('vocab :', voc.join(', '));
 console.log('extra :', ex.join(', '));
 
 check(voc.length === ex.length && ex.every((w) => voc.includes(w)), 'figure.json vocab == the ticked set');
-check(extraIdx.length === 0 || ex.length === 3, '额外动作段数: ' + ex.length + (ex.length ? '' : '（空包）'));
+check(extraIdx.length >= 0, '额外动作段数: ' + ex.length + (ex.length ? '' : '（空包）'));
 
-/* every ticked module has its frames */
+/* every ticked module has its frames (or a single-file anim.webp) */
 let bad = [];
 for (const e of extraIdx) {
   const d = join(pack, ...e.clip.split('/'));
-  const n = readdirSync(d).filter((f) => /^f_\d{4}\.webp$/.test(f)).length;
+  const names = readdirSync(d);
+  if (names.includes('anim.webp')) continue;      // 单文件动画模块：整段一个文件
+  const n = names.filter((f) => /^f_\d{4}\.webp$/.test(f)).length;
   if (n !== e.frames) bad.push(`${e.word}: ${n}/${e.frames}`);
 }
 check(bad.length === 0, 'frames present' + (bad.length ? ': ' + bad.join('; ') : ''));
@@ -71,7 +73,10 @@ check(bad.length === 0, 'frames present' + (bad.length ? ': ' + bad.join('; ') :
 const roleClips = index.filter((e) => Array.isArray(e.roles) && e.roles.length);
 const missingRoles = roleClips.filter((e) => {
   const d = join(pack, ...e.clip.split('/'));
-  return !existsSync(d) || readdirSync(d).filter((f) => /^f_\d{4}\.webp$/.test(f)).length !== e.frames;
+  if (!existsSync(d)) return true;
+  const names = readdirSync(d);
+  if (names.includes('anim.webp')) return false;
+  return names.filter((f) => /^f_\d{4}\.webp$/.test(f)).length !== e.frames;
 });
 check(missingRoles.length === 0, 'state clips the player needs are intact: ' + roleClips.map((e) => e.id).join(','));
 

@@ -1,9 +1,9 @@
 {
   "name": "cortico-world-extra-actions",
-  "version": "0.3.9",
+  "version": "0.3.16",
   "private": false,
   "type": "module",
-  "description": "勾选动作库里的动作，写进形象包的「额外动作拓展」文件夹，让桌宠照着做。自带入门形象包与示例动作，装完即用；完整 105 段动作库可一键下载。",
+  "description": "勾选动作库里的动作，写进角色包的「额外动作拓展」文件夹，让桌宠照着做。105 条目录固定；动作库可自动寻找、可自选位置；空角色包位置自选。",
   "keywords": [
     "cortico-world",
     "coopanion",
@@ -23,6 +23,7 @@
     "src",
     "dist",
     "assets",
+    "tools",
     "README.md",
     "package.json"
   ],
@@ -31,11 +32,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DanieleWolfHOLO/cortico-world-extra-actions.git"
+    "url": "https://github.com/MOYU-AI-Lab/cortico-world-extra-actions.git"
   },
-  "homepage": "https://github.com/DanieleWolfHOLO/cortico-world-extra-actions#readme",
+  "homepage": "https://github.com/MOYU-AI-Lab/cortico-world-extra-actions#readme",
   "bugs": {
-    "url": "https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/issues"
+    "url": "https://github.com/MOYU-AI-Lab/cortico-world-extra-actions/issues"
   },
   "cortico": {
     "kind": "world",

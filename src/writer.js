@@ -10,7 +10,8 @@
  *     index.json      同一份内容，给工具和人看
  *     README.md       这一份是怎么来的
  *     .managed.json   插件管过哪些动作、加过哪些词（用于"取消勾选"和恢复 figure.json）
- *     <分类>/<id>/    f_0001.webp … + preview.webp + action.json
+ *     <分类>/<id>/    anim.webp（640×360，一段一个文件）+ action.json
+ *                     老格式 f_0001.webp … + preview.webp 也认
  *
  * 同时会改 <pack>/figure.json 的 vocab：勾中的进、没勾的动作词出，第一次动之前留一份
  * figure.json.bak-额外动作拓展。
@@ -159,7 +160,10 @@ export function readExtra(packDir) {
     folders,
     bytes: dirBytes(root),
     updatedAt: typeof managed?.updatedAt === 'string' ? managed.updatedAt : null,
-    library: typeof managed?.library === 'string' ? managed.library : null,
+    // 新写入只存库名；老包里存的是绝对路径，这里统一折成名字，别把本机路径再往外传
+    libraryName: typeof managed?.libraryName === 'string'
+      ? managed.libraryName
+      : (typeof managed?.library === 'string' && managed.library ? basename(managed.library) : null),
     packId: typeof managed?.packId === 'string' ? managed.packId : null,
   };
 }
@@ -253,6 +257,47 @@ function copyModule(libraryDir, action, packDir) {
   const dstDir = join(packDir, EXTRA_DIR, action.category, action.id);
   if (!isInside(packDir, dstDir)) throw new Error(`包里的路径越界：${action.clip}`);
 
+  /* ---- 单文件动画模块（640×360 的 anim.webp）：高清库就是这种格式 ----
+     一个文件顶整段，浏览器自己循环播放；不做拆帧，体积只有帧序列的 1/4~1/6。 */
+  const animSrc = join(srcDir, 'anim.webp');
+  const ast = lstatSync(animSrc, { throwIfNoEntry: false });
+  const isSingle = action.anim === true || (!!ast && ast.isFile());
+  if (isSingle) {
+    if (!ast) throw new Error(`库里缺 ${action.id}/anim.webp`);
+    if (ast.isSymbolicLink()) throw new Error(`${action.id}/anim.webp 是符号链接，拒绝拷进形象包`);
+    if (!ast.isFile()) throw new Error(`${action.id}/anim.webp 不是普通文件`);
+    if (ast.size <= 0 || ast.size > MAX_MODULE_BYTES) throw new Error(`${action.id}/anim.webp 大小异常（${ast.size} 字节）`);
+
+    const dstAnim = join(dstDir, 'anim.webp');
+    const dstSt = lstatSync(dstAnim, { throwIfNoEntry: false });
+    if (dstSt && dstSt.isFile() && dstSt.size === ast.size) {
+      return { id: action.id, copied: false, bytes: dirBytes(dstDir) };
+    }
+    rmSync(dstDir, { recursive: true, force: true });
+    mkdirSync(dstDir, { recursive: true });
+    copyFileSync(animSrc, dstAnim);
+    const preview = join(srcDir, 'preview.webp');
+    const pst = lstatSync(preview, { throwIfNoEntry: false });
+    if (pst && pst.isFile() && pst.size > 0 && pst.size <= MAX_FRAME_BYTES) copyFileSync(preview, join(dstDir, 'preview.webp'));
+    writeJson(join(dstDir, 'action.json'), {
+      id: action.id,
+      zh: cleanLabel(action.zh),
+      say: cleanLabel(action.say || action.zh),
+      category: action.category,
+      clip: `${EXTRA_DIR}/${action.category}/${action.id}`,
+      frames: action.frames,
+      fps: action.fps || 24,
+      seconds: action.seconds,
+      word: action.word,
+      roles: [],
+      noMirror: !!action.noMirror,
+      reaction: !!action.reaction,
+      random: action.random !== false,
+      anim: true,
+    });
+    return { id: action.id, copied: true, bytes: dirBytes(dstDir) };
+  }
+
   const frames = Array.from({ length: action.frames }, (_, i) => `f_${String(i + 1).padStart(4, '0')}.webp`);
   let total = 0;
   for (const name of frames) {
@@ -314,6 +359,7 @@ function renderIndexJs(entries) {
       `seconds: ${Number(e.seconds)}`,
       `name: ${JSON.stringify(cleanLabel(e.name))}`,
       `category: ${JSON.stringify(e.category)}`,
+      `anim: ${e.anim ? 'true' : 'false'}`,
       `noMirror: ${e.noMirror ? 'true' : 'false'}`,
       `reaction: ${e.reaction ? 'true' : 'false'}`,
       `random: ${e.random ? 'true' : 'false'}`,
@@ -328,12 +374,14 @@ function renderReadme({ packName, packId, actions, libraryDir, updatedAt }) {
   const rows = actions
     .map((a) => `| \`${a.word}\` | ${a.zh} | ${a.category} | ${a.frames} | ${a.seconds.toFixed(2)}s |`)
     .join('\n');
+  // 只写库的名字，不写路径：这个文件夹会跟着角色包一起被分享，写死绝对路径对别人既没用又暴露本机目录。
+  const libName = libraryDir ? basename(libraryDir) : '（未设置）';
   return `# ${EXTRA_DIR}
 
 这个文件夹由 **Coopanion 扩展「额外动作拓展」** 写入，桌宠会把它并进自己的动作表。
 
 - 形象包：${packName || packId}（\`${packId}\`）
-- 动作素材来自：\`${libraryDir}\`
+- 动作素材来自：动作库「${libName}」
 - 更新时间：${updatedAt}
 - 已选动作：${actions.length} 段
 
@@ -342,11 +390,12 @@ function renderReadme({ packName, packId, actions, libraryDir, updatedAt }) {
 \`index.js\` 默认导出一个数组，每一项是：
 
 \`\`\`js
-{ word, clip, frames, fps, seconds, name, category, noMirror, reaction, random }
+{ word, clip, frames, fps, seconds, name, category, anim, noMirror, reaction, random }
 \`\`\`
 
-\`clip\` 是相对包根的目录（例如 \`额外动作拓展/eat/eat-dumplings\`），帧是
-\`f_0001.webp\` … 640×360、24 fps。播放器把它们和 \`actions/index.js\` 里的动作合并；
+\`clip\` 是相对包根的目录（例如 \`额外动作拓展/eat/eat-dumplings\`）。里面装的是整段动图
+\`anim.webp\`（640×360，一段一个文件，清单里带 \`anim: true\`）；老格式的帧序列
+\`f_0001.webp\` … 也照样认。播放器把这些和 \`actions/index.js\` 里的动作合并；
 \`word\` 不为空的动作会被登记进词表（重启 Coopanion 后 bot 才能点名）。
 
 ## 已选
@@ -359,6 +408,7 @@ ${rows}
 
 回到 Coopanion 的「额外动作拓展」面板重新勾选即可：取消的会被删掉，
 \`figure.json\` 里对应的词也会一并撤掉（改动前的原文在 \`figure.json.bak-额外动作拓展\`）。
+动作库在哪台机器上由各自的面板自己指定，这份清单里不存路径。
 `;
 }
 
@@ -424,6 +474,7 @@ export function save({ packDir, ids, catalog, libraryDir, pack = {} }) {
     seconds: a.seconds,
     name: a.zh,
     category: a.category,
+    anim: a.anim === true,          // 单文件动画模块：播放器直接挂 anim.webp
     noMirror: !!a.noMirror,
     reaction: !!a.reaction,
     random: a.random !== false,
@@ -432,7 +483,7 @@ export function save({ packDir, ids, catalog, libraryDir, pack = {} }) {
   writeJson(join(root, 'index.json'), {
     schema: SCHEMA,
     pack: pack.id ?? before.packId ?? null,
-    library: libraryDir,
+    libraryName: basename(libraryDir),
     updatedAt,
     count: entries.length,
     actions: entries,
@@ -450,7 +501,8 @@ export function save({ packDir, ids, catalog, libraryDir, pack = {} }) {
   writeJson(join(root, MANAGED_FILE), {
     schema: SCHEMA,
     packId: pack.id ?? before.packId ?? null,
-    library: libraryDir,
+    // 只记库名，不记绝对路径：.managed.json 会跟着角色包走
+    libraryName: basename(libraryDir),
     updatedAt,
     ids: idsSaved,
     added: vocab.added,
@@ -553,12 +605,14 @@ export function inspect({ packDir, libraryDir, catalog }) {
   if (!libraryDir || !existsSync(libraryDir)) problems.push(`动作库目录不存在：${libraryDir}`);
   const missing = [];
   for (const a of catalog) {
-    // 身体状态段（idle/walk/drag/turn）本来就没有触发词，它们不是"可加的动作"，跳过
+    // 身体状态段（idle / walk / drag / turn）没有触发词，它们不是"可加的动作"
     if (!a.word) continue;
     if (actionProblem(a)) { missing.push(a.id); continue; }
     const dir = join(libraryDir || '', 'actions', a.category, a.id);
-    if (!existsSync(dir)) missing.push(a.id);
-    else if (countFrames(dir) !== a.frames) missing.push(a.id);
+    if (!existsSync(dir)) { missing.push(a.id); continue; }
+    // 单文件动画模块（anim.webp）：帧数在文件里，不能按 f_NNNN 数
+    if (a.anim || existsSync(join(dir, 'anim.webp'))) continue;
+    if (countFrames(dir) !== a.frames) missing.push(a.id);
   }
   const extra = readExtra(packDir);
   return {

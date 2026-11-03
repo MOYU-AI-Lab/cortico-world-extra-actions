@@ -2,14 +2,13 @@
  * 「添加更多动作」的测试：把一套帧收进动作库。
  *   node test_importer.mjs
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const I = await import(pathToFileURL(join(here, '..', 'src', 'importer.js')).href);
-const LIB_SRC = (process.env.SHENSHEN_LIBRARY || 'C:/Users/11436/Desktop/深深-动作库') + '/actions/eat/eat-dumplings';
 
 const root = join(here, '_tmp-import');
 rmSync(root, { recursive: true, force: true });
@@ -30,11 +29,24 @@ const throws = (fn, re) => {
   if (re) assert.match(String(err.message), re);
 };
 
-/** 用真实帧造一套 4 帧的素材目录。 */
+/** 造一张"头部合法"的 webp：importer 只读头 40 字节（RIFF/WEBP/VP8L + 尺寸）。 */
+function fakeWebp(w = 640, h = 360) {
+  const buf = Buffer.alloc(40);
+  buf.write('RIFF', 0, 'ascii');
+  buf.writeUInt32LE(32, 4);
+  buf.write('WEBP', 8, 'ascii');
+  buf.write('VP8L', 12, 'ascii');
+  buf.writeUInt32LE(4, 16);
+  buf[20] = 0x2f;
+  buf.writeUInt32LE(((((h - 1) << 14) | (w - 1)) >>> 0), 21);
+  return buf;
+}
+const FRAME = fakeWebp();
+
+/** 用合成帧造一套素材目录（不依赖本机任何素材库）。 */
 function makeModule(dir, frames = 4) {
   mkdirSync(dir, { recursive: true });
-  const all = readdirSync(LIB_SRC).filter((f) => /^f_\d{4}\.webp$/.test(f)).sort();
-  for (let i = 0; i < frames; i++) copyFileSync(join(LIB_SRC, all[i]), join(dir, `f_${String(i + 1).padStart(4, '0')}.webp`));
+  for (let i = 0; i < frames; i++) writeFileSync(join(dir, `f_${String(i + 1).padStart(4, '0')}.webp`), FRAME);
   return dir;
 }
 

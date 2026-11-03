@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 /**
  * 面板模板自检的回归测试：模板少一个节点时必须当场抛错，而不是留成静默 null。
  *   node test_panel_guard.mjs
@@ -66,9 +67,11 @@ ok(() => {
 }, 'a missing template node fails loudly: ' + (err ? err.message : '(no error)'));
 
 /* 第三轮：静态校验 —— 自检清单里的每个选择器都必须真的出现在模板里。
-   这一条能提前抓住"按钮只写在动态 innerHTML 里、模板里没有"这类事故。 */
+   这一条能提前抓住"按钮只写在动态 innerHTML 里、模板里没有"这类事故。
+   注意用 fileURLToPath：PATH 是 file:// URL，路径里有中文（形象包 / 中文用户名）时
+   直接 replace("file:///") 拿到的是 %E5%BD%A2… 这种百分号编码，读不到文件。 */
 {
-  const src = readFileSync(PATH.replace("file:///", "").replace(/\//g, "\\"), "utf8");
+  const src = readFileSync(fileURLToPath(PATH), "utf8");
   const start = src.indexOf("wrap.innerHTML = `");
   const tpl = src.slice(start + "wrap.innerHTML = `".length, src.indexOf("`;", start));
   const reqBlock = src.slice(src.indexOf("const REQUIRED = ["), src.indexOf("];", src.indexOf("const REQUIRED = [")));

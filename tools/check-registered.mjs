@@ -15,7 +15,11 @@ import { dirname, join, resolve } from 'node:path';
 
 const NAME = 'cortico-world-extra-actions';
 const WORLD = 'extra-actions';
-const APP = process.env.COOPANION_DIR || 'D:/coopa/Coopanion';
+const APP = process.env.COOPANION_DIR || '';
+if (!APP) {
+  console.error('需要 COOPANION_DIR=<Coopanion 安装目录>（含 Coopanion.exe 的那一层）。这里不猜路径。');
+  process.exit(2);
+}
 const extDir = join(APP, 'data', 'extensions');
 const home = join(APP, 'data', 'home', 'companion');
 const log = join(APP, 'data', 'logs', 'core.log');

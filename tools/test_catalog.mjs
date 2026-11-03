@@ -15,7 +15,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const LIB_REAL = process.env.SHENSHEN_LIBRARY || 'C:/Users/11436/Desktop/深深-动作库';
 const root = join(here, '_tmp-catalog');
 rmSync(root, { recursive: true, force: true });
 const lib = join(root, 'lib');
@@ -23,14 +22,34 @@ const dataDir = join(root, 'data');
 mkdirSync(join(lib, 'actions'), { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 
-/** 从真库里搬 3 个模块（含 action.json / preview）当夹具。 */
-const picks = ['core/state-idle', 'core/look-around', 'eat/eat-dumplings'];
-for (const rel of picks) {
-  const from = join(LIB_REAL, 'actions', ...rel.split('/'));
-  const to = join(lib, 'actions', ...rel.split('/'));
-  mkdirSync(to, { recursive: true });
-  for (const f of readdirSync(from)) copyFileSync(join(from, f), join(to, f));
+/** 造一张"头部合法"的 webp（扫库/缩略图都只关心这是个 webp）。 */
+function fakeWebp(w = 640, h = 360) {
+  const buf = Buffer.alloc(40);
+  buf.write('RIFF', 0, 'ascii');
+  buf.writeUInt32LE(32, 4);
+  buf.write('WEBP', 8, 'ascii');
+  buf.write('VP8L', 12, 'ascii');
+  buf.writeUInt32LE(4, 16);
+  buf[20] = 0x2f;
+  buf.writeUInt32LE(((((h - 1) << 14) | (w - 1)) >>> 0), 21);
+  return buf;
 }
+const FRAME = fakeWebp();
+
+/** 造一个模块目录：3 帧 + preview.webp + action.json（全部合成，不依赖本机素材库）。 */
+function makeModule(dir, meta) {
+  mkdirSync(dir, { recursive: true });
+  for (let i = 1; i <= 3; i++) writeFileSync(join(dir, `f_${String(i).padStart(4, '0')}.webp`), FRAME);
+  writeFileSync(join(dir, 'preview.webp'), FRAME);
+  writeFileSync(join(dir, 'action.json'), JSON.stringify({
+    category: 'core', frames: 3, fps: 24, seconds: 0.125, word: null, roles: [], ...meta,
+  }, null, 2));
+  return dir;
+}
+
+makeModule(join(lib, 'actions', 'core', 'state-idle'), { id: 'state-idle', zh: '待机', roles: ['idle'] });
+makeModule(join(lib, 'actions', 'core', 'look-around'), { id: 'look-around', zh: '东张西望', roles: ['turn'] });
+makeModule(join(lib, 'actions', 'eat', 'eat-dumplings'), { id: 'eat-dumplings', zh: '吃饺子', word: 'eat-dumplings' });
 writeFileSync(join(lib, 'actions', 'index.js'), 'export default [];\n');
 writeFileSync(join(lib, 'figure.json'), JSON.stringify({ id: 'x', vocab: [] }));
 
@@ -50,10 +69,15 @@ const ctx = {
 };
 const world = new ExtraActionsWorld({ ctx });
 
-/* ---- 1. 清单来自磁盘 ---- */
+/* ---- 1. 清单 = 内置 105 条固定目录 ∪ 磁盘实际有的模块（0.3.10 起） ---- */
 let cat = world.mergedCatalog();
-check(() => assert.equal(cat.count, 3), 'catalog = 3 modules scanned from disk (' + cat.count + ')');
-check(() => assert.deepEqual(cat.actions.map((a) => a.id).sort(), ['eat-dumplings', 'look-around', 'state-idle']), 'exactly the modules on disk');
+check(() => assert.ok(cat.count >= 105), 'catalog keeps the built-in rows (count=' + cat.count + ')');
+check(() => assert.equal(cat.present, 3), 'only the 3 on-disk modules are present (' + cat.present + ')');
+check(() => assert.equal(cat.missing, cat.count - 3), 'the rest are reported missing (' + cat.missing + ')');
+check(() => assert.ok(['eat-dumplings', 'look-around', 'state-idle'].every((id) => cat.actions.find((x) => x.id === id)?.present === true)), 'the 3 on-disk modules are marked present');
+const absent = cat.actions.find((a) => a.present === false);
+check(() => assert.ok(absent && absent.id), 'a built-in row missing from disk is still listed');
+check(() => assert.equal(absent.dir, `actions/${absent.category}/${absent.id}`), 'an absent row still carries its fixed dir: ' + absent.dir);
 const drag = cat.actions.find((a) => a.id === 'state-idle');
 check(() => assert.ok(drag.roles.includes('idle')), 'roles come from action.json');
 check(() => assert.ok(drag.thumb && drag.thumb.startsWith('data:image/webp;base64')), 'thumbnail filled in (bundle or preview.webp)');
@@ -89,11 +113,11 @@ const r2 = rebuildIndex(lib);
 check(() => assert.equal(r2.changed, false), 'reindex is idempotent (' + r1.changed + ' then ' + r2.changed + ')');
 check(() => assert.equal(r2.count, 4), '4 modules after import');
 
-/* ---- 5. 删目录 → 清单里也没有 ---- */
+/* ---- 5. 删目录 → 导入的那一行从清单里消失，内置 105 条仍在 ---- */
 rmSync(join(lib, 'actions', 'extra', 'wave-hi'), { recursive: true });
 rebuildIndex(lib);
 world.bustCatalog();
-check(() => assert.equal(world.mergedCatalog().count, 3), 'deleting the module dir removes it from the catalog');
+check(() => assert.equal(world.mergedCatalog().actions.find((a) => a.id === 'wave-hi'), undefined), 'deleting the module dir drops the imported row');
 check(() => assert.equal(scanLibrary(lib).size, 3), 'scanLibrary agrees');
 
 /* ---- 6. 库不可用 → 退回内置清单，不崩 ---- */

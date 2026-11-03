@@ -84,6 +84,14 @@ const CSS = `<style>
 .ea-note.bad{color:var(--ea-danger);background:rgba(180,89,80,.08);border-color:rgba(180,89,80,.28)}
 .ea-note .ea-btn{padding:4px 9px;font-size:11.5px;border-radius:8px;margin-left:2px}
 
+/* 自动找到的动作库候选 */
+.ea-libs{margin:0 0 12px;display:flex;flex-direction:column;gap:6px}
+.ea-libs .head{font-size:12px;color:var(--ea-soft)}
+.ea-librow{flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:8px 11px;white-space:normal}
+.ea-librow b{font-weight:600;font-size:12px;color:var(--ea-ink);word-break:break-all;white-space:normal}
+.ea-librow span{font-size:11.5px;color:var(--ea-dim);white-space:normal}
+.ea-librow.on{border-color:var(--ea-acc);box-shadow:0 0 0 2px rgba(0,168,112,.14)}
+
 /* 分类芯片 */
 .ea-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
 .ea-chip{border:1px solid var(--ea-line);background:var(--ea-bg);border-radius:999px;padding:5px 11px;
@@ -120,7 +128,9 @@ const CSS = `<style>
 .ea-row.on{border-color:var(--ea-acc);box-shadow:inset 0 0 0 1px var(--ea-acc);
   background-image:linear-gradient(rgba(0,168,112,.055),rgba(0,168,112,.055))}
 .ea-row.off{opacity:.5;cursor:default;transform:none;box-shadow:none}
-.ea-row img,.ea-row .ea-ph{width:46px;height:46px;border-radius:10px;flex:none;object-fit:cover;
+/* 缩略图按素材原始比例（240×135 ≈ 16:9）显示：不再用方形盒 + cover 裁切，
+   否则高分屏(150%/200%)下会把窄边放大而发虚 */
+.ea-row img,.ea-row .ea-ph{width:64px;height:36px;border-radius:8px;flex:none;object-fit:cover;
   background:var(--ea-sheet2);border:1px solid var(--ea-line)}
 .ea-row .t{min-width:0;flex:1}
 .ea-row .t b{display:block;font-size:12.8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -129,6 +139,9 @@ const CSS = `<style>
 .ea-row .tag{display:inline-block;font-size:10px;color:var(--ea-soft);border:1px solid var(--ea-line);
   border-radius:6px;padding:0 5px;margin:3px 4px 0 0;line-height:16px;background:var(--ea-paper)}
 .ea-row .tag.acc{color:var(--ea-acc);border-color:rgba(0,168,112,.35);background:rgba(0,168,112,.08)}
+.ea-row .tag.warn{color:var(--ea-warn);border-color:rgba(150,116,59,.35);background:rgba(150,116,59,.10)}
+.ea-row.miss{border-style:dashed}
+.ea-row.miss img{filter:grayscale(1) opacity(.55)}
 .ea-row input{accent-color:var(--ea-acc);width:17px;height:17px;flex:none}
 .ea-x{border:1px solid var(--ea-line);background:var(--ea-bg);color:var(--ea-dim);border-radius:8px;width:22px;height:22px;
   line-height:1;font-size:14px;cursor:pointer;flex:none;padding:0;transition:all .15s}
@@ -161,6 +174,14 @@ const CSS = `<style>
 .ea-foot .ea-actions{display:flex;gap:8px;flex-wrap:wrap}
 
 /* 消息行 */
+.ea-guide{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;padding:10px 12px;margin:0 0 12px;
+  border:1px solid var(--ea-line);border-radius:12px;background:var(--ea-paper);font-size:12px;line-height:1.5}
+.ea-guide>b{color:var(--ea-ink);font-weight:650;white-space:nowrap;padding-top:1px}
+.ea-guide .s{display:flex;flex-direction:column;gap:1px;min-width:0;max-width:230px}
+.ea-guide .s i{font-style:normal;display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;
+  background:var(--ea-acc);color:#fff;font-size:10px;font-weight:700;margin-right:4px}
+.ea-guide .s .d{color:var(--ea-dim);font-size:11px;padding-left:19px}
+.ea-guide .a{color:var(--ea-dim);opacity:.6;padding-top:1px}
 .ea-msg{font-size:12.5px;min-height:18px;color:var(--ea-dim);transition:color .15s}
 .ea-msg.bad{color:var(--ea-danger)}
 .ea-msg.ok{color:var(--ea-ok)}
@@ -216,15 +237,27 @@ const panel = {
           <span class="ea-badge" data-role="badge"><span class="dot"></span>准备中</span>
           </div>
       </div>
+      <div class="ea-guide">
+        <b>四步就能用</b>
+        <span class="s"><i>1</i>选动作库<span class="d">没有完整库就点上面「自动寻找动作库…」，或把解压出来的「深深-动作库」选进来</span></span>
+        <span class="a">›</span>
+        <span class="s"><i>2</i>勾动作<span class="d">勾中的才会写进形象包，没勾的桌宠不会做</span></span>
+        <span class="a">›</span>
+        <span class="s"><i>3</i>保存到形象包<span class="d">右下角那个绿色按钮</span></span>
+        <span class="a">›</span>
+        <span class="s"><i>4</i>装扮页重新点一下形象<span class="d">插件不碰桌宠，这一步才会真正生效</span></span>
+      </div>
       <div class="ea-bar">
         <select class="ea-sel" data-role="pack"></select>
         <input class="ea-inp" data-role="q" placeholder="搜名字 / id…">
         <button class="ea-btn" data-act="library" title="动作库可以放在任意盘，路径会被记住">选择动作库位置…</button>
-        <button class="ea-btn" data-act="restore-pack" title="创建一个空的深深形象包（只有身体状态）">恢复空的形象包</button>
-        <button class="ea-btn" data-act="starter-library" title="在你选的文件夹下建一个自带示例动作库">用自带示例建库…</button>
+        <button class="ea-btn" data-act="starter-library" title="在你会选的目录下建一个自带示例动作库（3 段）并设为当前库">用自带示例建库…</button>
+        <button class="ea-btn" data-act="find-libs" title="自动扫一遍本机像动作库的目录，列出来点一下就用">自动寻找动作库…</button>
+        <button class="ea-btn" data-act="restore-pack" title="建一个空的角色包（只有身体状态），位置自己选">建立空的角色包（选位置）</button>
         <span class="ea-lib" data-role="lib"></span>
       </div>
       <div class="ea-note" data-role="note" hidden></div>
+      <div class="ea-libs" data-role="libs" hidden></div>
       <div class="ea-installed" data-role="installed" hidden></div>
       <div class="ea-chips" data-role="chips"></div>
       <div data-role="list"></div>
@@ -237,8 +270,8 @@ const panel = {
             <button class="ea-btn pri" type="button" data-act="add">选择动作文件夹…</button>
             <span data-role="addmsg"></span>
           </div>
-          <div style="margin-top:6px">想一次拿到全部 105 段？下载<b>完整动作库</b>（约 320 MB）：\n            <br><code>https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip</code>\n            <br>解压后点上面「选择动作库…」指到解压出来的 <code>深深-动作库</code> 文件夹即可。\n            <br>（群文件 / 网盘里若有同名 zip，效果一样。）
-            解压后点上面「选择动作库…」指到解压出来的 <code>深深-动作库</code> 文件夹即可。</div>
+          <div style="margin-top:6px">动作库是固定的那一个文件夹（路径见上面的状态行），不需要另外下载任何东西。
+            <br>想换位置：点「自动寻找动作库…」让它自己扫出来，或用「选择动作库…」手动指过去。</div>
           <div style="margin-top:6px">可选：同目录放 <code>action.json</code> 指定 <code>{"id":"eat-burger","zh":"吃汉堡","category":"extra","fps":24}</code>；不给就按目录名自动生成、24 fps。</div>
         </div>
       </details>
@@ -256,16 +289,17 @@ const panel = {
           <button class="ea-btn" data-act="none">清空勾选</button>
           <button class="ea-btn" data-act="all">全选可点名</button>
           <button class="ea-btn" data-act="prune" title="删掉包里用不到的动作模块">压缩包</button>
-          <button class="ea-btn dan" data-act="clear">清空拓展</button>
-          <button class="ea-btn pri" data-act="save">保存到形象包</button>
+          <button class="ea-btn dan" data-act="clear">清空随机动作列表</button>
+          <button class="ea-btn pri" data-act="save">保存随机列表</button>
         </div>
       </div>`;
 
     /* 模板自检：少一个节点就当场炸，别留成静默 null */
     const REQUIRED = [
-      '[data-role=pack]', '[data-role=q]', '[data-role=lib]', '[data-role=note]',
+      '[data-role=pack]', '[data-role=q]', '[data-role=lib]', '[data-role=note]', '[data-role=libs]',
       '[data-role=installed]', '[data-role=chips]', '[data-role=list]', '[data-role=sum]',
-      '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]', '[data-act=restore-pack]', '[data-act=starter-library]',
+      '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]',
+      '[data-act=restore-pack]', '[data-act=find-libs]', '[data-act=starter-library]',
     ];
     const missing = REQUIRED.filter((sel) => !wrap.querySelector(sel));
     if (missing.length) throw new Error('面板模板缺少节点：' + missing.join(', '));
@@ -274,6 +308,7 @@ const panel = {
     const packSel = $('[data-role=pack]');
     const qInp = $('[data-role=q]');
     const noteEl = $('[data-role=note]');
+    const libsEl = $('[data-role=libs]');
     const chipsEl = $('[data-role=chips]');
     const installedEl = $('[data-role=installed]');
     const listEl = $('[data-role=list]');
@@ -292,7 +327,7 @@ const panel = {
       const list = (state?.figures ?? []).filter((f) => f.supported && !f.builtin);
       packSel.innerHTML = '';
       if (!list.length) {
-        packSel.appendChild(el('option', null, '没有可写的形象包（点「恢复空的形象包」）'));
+        packSel.appendChild(el('option', null, '没有可写的角色包（点「建立空的角色包」）'));
         packSel.disabled = true;
         return;
       }
@@ -325,10 +360,13 @@ const panel = {
     }
 
     function rowOf(a) {
-      const isState = !a.word;
+      const isState = !a.word || (Array.isArray(a.roles) && a.roles.length > 0);
+      const off = a.present === false;              // 库里还没有这一段的帧
       const on = selected.has(a.id);
       const mounted = installed.has(a.id);
-      const row = el('div', 'ea-row' + (on ? ' on' : '') + (isState ? ' off' : ''));
+      const row = el('div', 'ea-row' + (on ? ' on' : '') + (isState || off ? ' off' : '') + (off ? ' miss' : ''));
+      // 目录固定：悬停就能看到这段动作在库里的固定位置 actions/<分类>/<id>
+      row.title = '固定目录：' + (a.dir || a.clip || `actions/${a.category}/${a.id}`) + (off ? '（库里还没有，补进来才能用）' : '');
       row.innerHTML = `
         ${a.thumb ? `<img src="${esc(a.thumb)}" alt="" loading="lazy">` : `<span class="ea-ph">${esc((a.zh || "?").slice(0, 1))}</span>`}
         <div class="t">
@@ -338,15 +376,15 @@ const panel = {
             <span class="tag">${esc(a.catZh)}</span>
             <span class="tag">${a.seconds.toFixed(1)}s</span>
             ${mounted ? '<span class="tag acc">已装</span>' : ''}
-            ${isState ? '<span class="tag">状态 · 不用勾</span>' : ''}
+            ${off ? '<span class="tag warn">库里没有 · 缺帧</span>' : (isState ? '<span class="tag">状态 · 不用勾</span>' : '')}
             ${a.reaction ? '<span class="tag">点击</span>' : ''}
             ${a.noMirror ? '<span class="tag">带字</span>' : ''}
             ${a.random ? '' : '<span class="tag">不轮播</span>'}
           </div>
         </div>
         ${mounted ? '<button class="ea-x" type="button" title="从包里删掉这一段" aria-label="删除">×</button>' : ''}
-        <input type="checkbox" ${on ? 'checked' : ''} ${isState ? 'disabled' : ''}>`;
-      if (!isState) {
+        <input type="checkbox" ${on ? 'checked' : ''} ${isState || off ? 'disabled' : ''}>`;
+      if (!isState && !off) {
         const box = row.querySelector('input');
         row.onclick = (e) => {
           if (e.target.closest('.ea-x')) return;      // × 交给它自己的处理
@@ -424,8 +462,29 @@ const panel = {
       if (badge) badge.innerHTML = `<span class="dot"></span><b>${n}</b> 已选 · ${installed.size} 已装`;
       const p = pack();
       const extra = p?.extra?.count ?? 0;
-      sumEl.innerHTML = `已勾选 <b>${n}</b> 段 · 约 <b>${mb(bytesOf(selected))}</b>` +
-        (extra ? `　包里已有 ${extra} 段（${mb(p.extra.bytes || 0)}）` : '');
+      const total = catalog?.count ?? 0;
+      const have = catalog?.present ?? total;
+      const miss = catalog?.missing ?? 0;
+      sumEl.innerHTML = `已勾选 <b>${n}</b> 段 · 约 <b>${mb(bytesOf(selected))}</b>`
+        + `　|　清单 <b>${total}</b> 条：库里 <b>${have}</b>${miss ? ` · <b class="warn">缺 ${miss}</b>` : ''}`
+        + (extra ? `　|　包里已有 ${extra} 段（${mb(p.extra.bytes || 0)}）` : '');
+    }
+
+    /** 「自动寻找动作库」的结果列表：一行一个候选，点一下就是它。 */
+    function renderLibraries(list) {
+      libsEl.innerHTML = '';
+      if (!Array.isArray(list) || !list.length) { libsEl.hidden = true; return; }
+      libsEl.hidden = false;
+      libsEl.appendChild(el('div', 'head', '找到这些像动作库的目录 —— 点一个就用它：'));
+      for (const l of list) {
+        const row = el('button', 'ea-btn ea-librow' + (l.current ? ' on' : ''));
+        row.type = 'button';
+        row.dataset.act = 'use-lib';
+        row.dataset.dir = l.dir;
+        const cat = Array.isArray(l.categories) && l.categories.length ? l.categories.join(' / ') : '';
+        row.innerHTML = `<b>${esc(l.dir)}</b><span>${l.count} 段${cat ? ' · ' + esc(cat) : ''} · ${esc(l.source)}${l.current ? ' · 当前在用' : ''}</span>`;
+        libsEl.appendChild(row);
+      }
     }
 
     function renderNote() {
@@ -436,15 +495,16 @@ const panel = {
       if (!state.library.ok) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
-        noteEl.innerHTML = `还没指定动作库（动作可以放在任意盘）。点上面「选择动作库位置…」指向解压出来的 <code>深深-动作库</code> 文件夹，路径会被记住。`
-          + ` <div class="row" style="margin-top:8px"><button class="ea-btn pri" type="button" data-act="library">选择动作库位置…</button><button class="ea-btn" type="button" data-act="starter-library">用自带示例建一个…</button></div>`
-          + ` <br><span class="ea-dim">还没有完整库？下载 <code>https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip</code> 解压后用。</span>`;
+        const smallLib = state.library.ok && (state.library.present ?? state.library.count) < 20
+        ? `<b>当前动作库只有 ${state.library.present ?? state.library.count} 段</b>（插件自带的示例）。想要全部 105 段：去 <a href="https://github.com/MOYU-AI-Lab/cortico-world-extra-actions/releases" target="_blank" rel="noreferrer">Releases 页</a> 下载 <code>shenshen-action-library.zip</code>，解压后点「选择动作库位置…」指到里面的 <code>深深-动作库</code>（选它的上一级也行，会自动定位）。<br>`
+        : '';
+      noteEl.innerHTML = smallLib + `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点「自动寻找动作库…」让它自己找，或用「选择动作库…」指到那个文件夹。`;
         return;
       }
       if (!p) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note warn';
-        noteEl.innerHTML = '没有可写的形象包。先把「深深 · 动作库」（或打了补丁的深深）装进 Coopanion。';
+        noteEl.innerHTML = '还没有可写的角色包。点这里<b>建一个空的</b>（只有 4 段身体状态，词表空），位置你自己选： <button class="ea-btn pri" type="button" data-act="restore-pack">建立空的角色包（选位置）</button>';
         return;
       }
       noteEl.hidden = false;
@@ -462,7 +522,7 @@ const panel = {
           + `<br><span class="ea-dim">勾选保存后，去 Coopanion 的<b>装扮页</b>重新点一下这个形象，它才会加载新的动作表。</span><br>`
         : '')
         + `写入 <code>${esc(p.dir)}\\额外动作拓展\\</code>　·　动作库 <code>${esc(state.library.dir)}</code>（${state.library.count} 段）`
-        + `<br>保存会把 <code>figure.json</code> 的动作词裁成你勾的这些（表情不动），原文备份在 <code>figure.json.bak-额外动作拓展</code>；「清空拓展」可完整还原。`;
+        + `<br>保存会把 <code>figure.json</code> 的动作词裁成你勾的这些（表情不动），原文备份在 <code>figure.json.bak-额外动作拓展</code>；「清空随机动作列表」可完整还原。`;
     }
 
     /* ---------- 数据 ---------- */
@@ -486,9 +546,11 @@ const panel = {
       packId = state.pick || state.current || state.figures?.find((f) => f.supported)?.id || null;
       const p = state.figures?.find((f) => f.id === packId);
       installed = new Set(p?.extra?.ids ?? []);
-      selected = new Set([...installed].filter((id) => catalog.actions.some((a) => a.id === id && a.word)).slice(0, MAX_SELECTED));
+      selected = new Set([...installed].filter((id) => catalog.actions.some((a) => a.id === id && a.word && a.present !== false)).slice(0, MAX_SELECTED));
+      const haveSeg = state.library.present ?? state.library.count;
       libEl.textContent = state.library.ok
-        ? `${state.library.count} 段可用` + (state.library.imported ? `（自定义 ${state.library.imported}）` : '') + `　${state.library.dir}`
+        ? `${haveSeg} / ${state.library.count} 段可用　${state.library.dir}`
+          + (state.library.imported ? `（自定义 ${state.library.imported}）` : '')
         : '动作库未设置（可放在任意盘）';
       renderPack(); renderChips(); renderList(); renderInstalled(); renderSum(); renderNote();
     }
@@ -496,7 +558,7 @@ const panel = {
     function loadSelectionFor(id) {
       const p = state?.figures?.find((f) => f.id === id);
       installed = new Set(p?.extra?.ids ?? []);
-      selected = new Set([...installed].filter((x) => catalog.actions.some((a) => a.id === x && a.word)).slice(0, MAX_SELECTED));
+      selected = new Set([...installed].filter((x) => catalog.actions.some((a) => a.id === x && a.word && a.present !== false)).slice(0, MAX_SELECTED));
     }
 
     /* ---------- 交互 ---------- */
@@ -522,7 +584,7 @@ const panel = {
           if (!packId) return say('先选一个形象包', true);
           if (!selected.size) {
             // 一段都没勾 = 不想让它做任何额外动作，等同清空，别丢一个看不懂的报错
-            if (!confirm('一段都没勾 —— 等于清空这个包的额外动作（词表还原成原样）。继续？')) return;
+            if (!confirm('一段都没勾 —— 等于清空这个包的随机动作列表（词表还原成原样）。继续？')) return;
             busy(true);
             const rc = await ctx.invoke('clear', [packId]);
             installed.clear();
@@ -535,9 +597,9 @@ const panel = {
           const r = await ctx.invoke('save', [packId, [...selected]]);
           state = await ctx.invoke('state');
           const p = state.figures?.find((f) => f.id === packId);
-          selected = new Set(r.copied.concat(r.skipped).filter((id) => catalog.actions.some((a) => a.id === id)));
+          selected = new Set(r.copied.concat(r.skipped).filter((id) => catalog.actions.some((a) => a.id === id && a.present !== false)));
           say(`已写入 ${r.count} 段，${mb(r.bytes)}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}；去装扮页重新点一下这个形象才会生效`);
-          libEl.textContent = state.library.ok ? `${state.library.count} 段可用` : '动作库未设置';
+          libEl.textContent = state.library.ok ? `${state.library.present ?? state.library.count} / ${state.library.count} 段可用` : '动作库未设置（可放在任意盘）';
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
           if (p) p.extra = { ids: [...selected], count: r.count, bytes: r.bytes, updatedAt: r.updatedAt };
         } else if (act === 'prune') {
@@ -550,7 +612,7 @@ const panel = {
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
         } else if (act === 'clear') {
           if (!packId) return say('先选一个形象包', true);
-          if (!confirm('清空这个形象包里的「额外动作拓展」？figure.json 里加过的词也会撤掉。')) return;
+          if (!confirm('清空这个角色包的「随机动作列表」？figure.json 里加过的词也会撤掉。')) return;
           busy(true);
           const r = await ctx.invoke('clear', [packId]);
           selected.clear();
@@ -573,17 +635,52 @@ const panel = {
             : `已删除「${a?.zh ?? id}」，还剩 ${r.remaining} 段`);
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
         } else if (act === 'restore-pack') {
-          if (!confirm('在形象包目录里创建一个「空的深深形象包」？\n\n只有 4 段身体状态，没有额外动作、词表空。\n如果已经有同 id 的包，只检查并补齐缺失文件，不会再建第二个。')) return;
+          let dir = null;
+          try {
+            dir = await ctx.pickPath({
+              kind: 'directory',
+              title: '选择空形象包放在哪（形象包根目录，或根下面的一个文件夹）',
+              currentPath: (state?.roots && state.roots[0]) || state?.figuresDir || undefined,
+            });
+          } catch { dir = null; }
+          if (!dir) return say('没有选目录', true);
+          if (!confirm('在这个位置建立一个「空的角色包」？\n\n' + dir
+            + '\n\n只有 4 段身体状态，没有额外动作、词表空。\n位置必须落在桌宠认的形象包目录里，否则会被拒绝。')) return;
           busy(true); say('正在准备形象包…');
-          const r = await ctx.invoke('restore-pack', []);
-          if (r.created) say('已创建空的深深形象包');
-          else if (r.repaired) say('形象包缺文件，已补齐');
-          else say('形象包已存在，没有重复创建');
+          const r = await ctx.invoke('restore-pack', [dir]);
+          if (r.created) say('已创建空的深深形象包 → ' + (r.path || dir));
+          else if (r.repaired) say('形象包缺文件，已补齐 → ' + (r.path || dir));
+          else say('那个位置已经有这个包了，只做了检查 → ' + (r.path || dir));
           if (r.duplicates && r.duplicates.length) {
-            say(`另外发现 ${r.duplicates.length} 个重复的同 id 包，请手动删掉：` + r.duplicates.map((p) => String(p).split(/[\\/]/).pop()).join('、'), true);
+            say(`${r.duplicates.length} 个同名包在别的形象包目录里，请自行决定留哪个：` + r.duplicates.map((p) => String(p)).join('、'), true);
           }
           await loadAll();
           if (r.dir) { packSel.value = r.dir; renderNote(); renderList(); renderInstalled(); renderSum(); }
+        } else if (act === 'find-libs') {
+          busy(true); say('正在寻找动作库…');
+          const r = await ctx.invoke('find-libraries', []);
+          renderLibraries(r.libraries || []);
+          say(r.count
+            ? `找到 ${r.count} 个候选，点一个就用它`
+            : '没找到像动作库的目录 —— 用「选择动作库…」手动指，或用「添加更多动作…」先建一个', !r.count);
+        } else if (act === 'starter-library') {
+          let parent = null;
+          try {
+            parent = await ctx.pickPath({ kind: 'directory', title: '选一个盘或文件夹，自带示例动作库会建在它下面的「深深-动作库」里' });
+          } catch { parent = null; }
+          if (!parent) return say('没有选目录', true);
+          busy(true); say('正在建动作库…');
+          const r = await ctx.invoke('use-starter-library', [parent]);
+          say((r.created ? '已建好：' : '这个位置已有动作库，直接用：') + r.path);
+          await loadAll();
+        } else if (act === 'use-lib') {
+          const dir = btn.dataset.dir;
+          if (!dir) return;
+          busy(true);
+          await ctx.invoke('set-library', [dir]);
+          renderLibraries([]);
+          await loadAll();
+          say('动作库已切到 ' + dir);
         } else if (act === 'add') {
           let dir = null;
           try {
@@ -603,21 +700,14 @@ const panel = {
               ? r.added.map((x) => `${x.zh}（${x.frames} 帧 / ${x.seconds}s）`).join('、')
               : (r.skipped.map((x) => `${x.dir}：${x.reason}`).join('；') || '');
           }
-        } else if (act === 'starter-library') {
-          const parent = await ctx.pickPath({ kind: 'directory', title: '选一个盘/文件夹，自带示例动作库会建在它下面的「深深-动作库」里' });
-          if (!parent) return say('没有选目录', true);
-          busy(true); say('正在建…');
-          const r = await ctx.invoke('use-starter-library', [parent]);
-          say((r.created ? '已建好：' : '这个位置已有动作库，直接用：') + r.path);
-          await loadAll();
         } else if (act === 'library') {
           // 协议里 PathPickerOptions.kind 只有 'file' | 'directory'
           const dir = await ctx.pickPath({ kind: 'directory', title: '选择动作库目录（里面要有 actions/）' });
           if (!dir) return say('没有选目录', true);
           busy(true);
-          await ctx.invoke('set-library', [dir]);
+          const r = await ctx.invoke('set-library', [dir]);
           await loadAll();
-          say('动作库已更新');
+          say(r.note ? `${r.note}（${r.libraryDir}）` : `动作库已更新（${r.libraryDir}）`);
         }
       } catch (err) {
         say(String(err?.message ?? err), true);

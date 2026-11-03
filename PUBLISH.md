@@ -2,7 +2,7 @@
 
 三件事：GitHub 仓库、npm 包、Coopanion 插件库。**第三步依赖第二步**（那个"库"就是 npm 源）。
 
-先把下面命令里的 `DanieleWolfHOLO` 换成你的 GitHub 用户名。
+先把下面命令里的 `MOYU-AI-Lab` 换成你的 GitHub 用户名。
 
 ## 1. GitHub
 
@@ -11,7 +11,7 @@ cd 深深与额外动作拓展-插件        # 本目录（或解压出来的 co
 git init -b main
 git add .
 git commit -m "feat: 深深与额外动作拓展 0.2.5"
-git remote add origin https://github.com/DanieleWolfHOLO/cortico-world-extra-actions.git
+git remote add origin https://github.com/MOYU-AI-Lab/cortico-world-extra-actions.git
 git push -u origin main
 ```
 
@@ -21,7 +21,7 @@ git push -u origin main
 
 ```bash
 git tag v0.2.5 && git push --tags
-# 然后在 https://github.com/DanieleWolfHOLO/cortico-world-extra-actions/releases/new 选 v0.2.5，上传 zip
+# 然后在 https://github.com/MOYU-AI-Lab/cortico-world-extra-actions/releases/new 选 v0.2.5，上传 zip
 ```
 
 ## 2. npm

@@ -9,11 +9,11 @@
  * 这个文件不直接碰文件内容，只做发现、校验和转发。
  */
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
-import { ensureStarter, installStarterLibrary, restorePack } from './starter.js';
+import { ensureStarter, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
 import { petFigures, petState } from './pet.js';
 
 const ID = 'extra-actions';
@@ -66,8 +66,12 @@ export class ExtraActionsWorld {
         pkgDir: join(HERE, '..'),
         figuresDir: () => this.figuresDir(),
         dataDir: this.dataDir,
+        botDir: this.botDir,
         libraryDir: () => this.libraryDir(),
         saveSettings: (patch) => this.saveSettings(patch),
+        // 没有形象包就完全没法用：至少铺一个空壳（4 段身体状态、词表空）。
+        // 动作库仍然不碰 —— 放哪个盘由用户在面板里选。
+        seedPack: true,
         log: (msg, extra) => host?.log?.info?.(msg, extra),
       });
       if (seeded.pack || seeded.library) this.bustCatalog();
@@ -97,23 +101,43 @@ export class ExtraActionsWorld {
     const key = `${lib}|${this._catalogBust}`;
     if (this._cat && this._cat.key === key && now - this._cat.at < 4000) return this._cat.data;
 
-    const bundleById = new Map(this.bundle.actions.map((a) => [a.id, a]));
-    let actions;
-    if (lib && existsSync(join(lib, 'actions'))) {
-      actions = [...scanLibrary(lib).values()].map((m) => {
-        const b = bundleById.get(m.id) ?? {};
-        return {
-          ...b,                                        // 缩略图、体积这类打包时才知道的
-          ...m,                                        // 磁盘上的元数据覆盖它
-          catZh: CATEGORY_ZH[m.category] ?? b.catZh ?? m.category,
-          thumb: m.thumb ?? b.thumb ?? previewThumb(lib, m.clip),
-          bytes: m.bytes ?? b.bytes ?? 0,
-        };
+    // 内置 105 条固定目录永远都在；库里有就用磁盘元数据覆盖，库里没有就标 present:false
+    const disk = (lib && existsSync(join(lib, 'actions'))) ? scanLibrary(lib) : new Map();
+    const actions = [];
+    const seen = new Set();
+    for (const b of this.bundle.actions) {
+      const m = disk.get(b.id);
+      seen.add(b.id);
+      actions.push({
+        ...b,
+        ...(m ?? {}),                                  // 磁盘上的元数据优先
+        catZh: CATEGORY_ZH[m?.category ?? b.category] ?? b.catZh ?? b.category,
+        thumb: (m ? previewThumb(lib, m.clip) : null) ?? m?.thumb ?? b.thumb,
+        bytes: m?.bytes ?? b.bytes ?? 0,
+        dir: m?.clip ?? `actions/${b.category}/${b.id}`,   // 固定目录：库里没有也照给
+        present: !!m,
       });
-    } else {
-      actions = [...bundleById.values()];
     }
-    const data = { ...this.bundle, actions, count: actions.length, words: actions.filter((a) => a.word).length };
+    for (const [id, m] of disk) {
+      if (seen.has(id)) continue;                      // 库里多出来的自定义模块，追加
+      actions.push({
+        ...m,
+        catZh: CATEGORY_ZH[m.category] ?? m.catZh ?? m.category,
+        thumb: m.thumb ?? previewThumb(lib, m.clip),
+        bytes: m.bytes ?? 0,
+        dir: m.clip,
+        present: true,
+        imported: true,
+      });
+    }
+    const data = {
+      ...this.bundle,
+      actions,
+      count: actions.length,
+      present: actions.filter((a) => a.present).length,
+      missing: actions.filter((a) => !a.present).length,
+      words: actions.filter((a) => a.word).length,
+    };
     this._cat = { key, at: now, data };
     return data;
   }
@@ -195,6 +219,48 @@ export class ExtraActionsWorld {
     return (this._figuresDir = found ?? join(this.dataDir, 'figures'));
   }
 
+  /**
+   * Coo 注入的额外形象包根（Steam Workshop、自定义目录）：主进程把它放在
+   * `COOPANION_PACK_ROOTS` 里传给 Core，桌宠那边的 packRoots 就是这么来的。
+   * 这些根里的包桌宠同样看得见，所以这里也当合法落点/落库位置。
+   */
+  extraRoots() {
+    const raw = typeof process !== 'undefined' ? (process.env.COOPANION_PACK_ROOTS ?? '') : '';
+    return String(raw)
+      .split(delimiter)
+      .map((s) => s.trim())
+      .filter((s) => s && isAbsolute(s) && existsSync(s));
+  }
+
+  /** 全部形象包根，第一个是主 figures 目录。 */
+  figureRoots() {
+    const primary = this.figuresDir();
+    const out = [primary];
+    for (const r of this.extraRoots()) {
+      const hit = out.some((d) => resolve(d) === resolve(r));
+      if (!hit) out.push(r);
+    }
+    return out;
+  }
+
+  /** id → 包目录：扫所有根，`figure.json` 的 id 优先，目录名兜底。 */
+  packDirs() {
+    const map = new Map();
+    for (const root of this.figureRoots()) {
+      let entries;
+      try { entries = readdirSync(root, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith('.')) continue;
+        const dir = join(root, e.name);
+        const fig = readJson(join(dir, 'figure.json'), null);
+        if (!fig) continue;
+        const id = String(fig.id ?? e.name);
+        if (!map.has(id)) map.set(id, { dir, root, fig });
+      }
+    }
+    return map;
+  }
+
   /* ---------- 列表 ---------- */
 
   /** 能往里写动作的形象包：装了、在 figures 目录里、入口看着像帧序列播放器。 */
@@ -210,8 +276,10 @@ export class ExtraActionsWorld {
     try { current = (await petState())?.skin?.figure ?? null; } catch { /* 桌宠没开 */ }
 
     const out = [];
+    const dirs = this.packDirs();
     for (const p of installed) {
-      const packDir = join(dir, String(p.id));
+      const hit = dirs.get(String(p.id));
+      const packDir = hit?.dir ?? join(dir, String(p.id));
       const supported = packLooksSupported(packDir);
       const extra = readExtra(packDir);
       out.push({
@@ -221,29 +289,25 @@ export class ExtraActionsWorld {
         builtin: p.removable === false,
         supported,
         dir: packDir,
+        root: hit?.root ?? dir,
         extra: { ids: extra.ids, count: extra.ids.length, bytes: extra.bytes, updatedAt: extra.updatedAt },
       });
     }
-    // 没被 /api/figures 列出但磁盘上有的（桌宠没启动时）
+    // 没被 /api/figures 列出但磁盘上有的（桌宠没启动时）：把所有根都扫一遍
     if (!out.length) {
-      try {
-        for (const e of readdirSync(dir, { withFileTypes: true })) {
-          if (!e.isDirectory()) continue;
-          const packDir = join(dir, e.name);
-          const fig = readJson(join(packDir, 'figure.json'));
-          if (!fig) continue;
-          const extra = readExtra(packDir);
-          out.push({
-            id: String(fig.id ?? e.name),
-            name: typeof fig.name === 'object' ? (fig.name.zh || e.name) : e.name,
-            current: fig.id === current,
-            builtin: false,
-            supported: packLooksSupported(packDir),
-            dir: packDir,
-            extra: { ids: extra.ids, count: extra.ids.length, bytes: extra.bytes, updatedAt: extra.updatedAt },
-          });
-        }
-      } catch { /* 目录都读不到就空着 */ }
+      for (const [id, hit] of dirs) {
+        const extra = readExtra(hit.dir);
+        out.push({
+          id,
+          name: typeof hit.fig.name === 'object' ? (hit.fig.name.zh || id) : String(hit.fig.name ?? id),
+          current: id === current,
+          builtin: false,
+          supported: packLooksSupported(hit.dir),
+          dir: hit.dir,
+          root: hit.root,
+          extra: { ids: extra.ids, count: extra.ids.length, bytes: extra.bytes, updatedAt: extra.updatedAt },
+        });
+      }
     }
     out.sort((a, b) => Number(b.current) - Number(a.current) || a.name.localeCompare(b.name, 'zh'));
     return out;
@@ -282,7 +346,12 @@ export class ExtraActionsWorld {
       case 'reindex':
         return this.reindex();
       case 'restore-pack':
-        return this.restoreShenshenPack();
+        // args: [落点目录(可选), 包名(可选)]
+        return this.restoreShenshenPack(typeof a[0] === 'string' ? a[0] : '', typeof a[1] === 'string' ? a[1] : '');
+      case 'find-libraries':
+        return this.findLibraries();
+      case 'dirs':
+        return this.fixedDirs();
       case 'use-starter-library':
         return this.useStarterLibrary(a[0]);
       case 'save': {
@@ -322,7 +391,10 @@ export class ExtraActionsWorld {
       library: {
         dir: libraryDir,
         ok: libOk,
+        // count 是"目录里一共 105 条"，present 是"这一段库里真的有帧"
         count: merged.count,
+        present: merged.present,
+        missing: merged.missing,
         words: merged.words,
         imported: merged.actions.filter((a) => !this.bundleIds().has(a.id)).length,
         categories: [...new Set(merged.actions.map((a) => a.category))]
@@ -330,6 +402,7 @@ export class ExtraActionsWorld {
       },
       folder: EXTRA_DIR,
       figuresDir: this.figuresDir(),
+      roots: this.figureRoots(),
       installed:
         pick && pick.supported
           ? inspect({ packDir: pick.dir, libraryDir: libOk ? libraryDir : '', catalog: merged.actions })
@@ -342,10 +415,13 @@ export class ExtraActionsWorld {
     const lib = this.libraryDir();
     if (!lib || !existsSync(lib)) throw new Error('动作库目录没设置好（右边「选择动作库」）');
     const merged = this.mergedCatalog();
+    // 目录固定：清单里有的 id 一律落到它登记的分类目录，避免同一个动作出现两个路径
+    const fixedCat = new Map(merged.actions.map((a) => [a.id, a.category]));
     const r = addModules({
       sourceDir,
       libraryDir: lib,
       existingIds: new Set(merged.actions.map((a) => a.id)),
+      fixedCategory: (id) => fixedCat.get(id) ?? null,
       thumbFor: (files, dir) => {
         try {
           const mid = files[Math.floor(files.length / 2)] ?? files[0];
@@ -361,6 +437,26 @@ export class ExtraActionsWorld {
     return { ok: true, ...r, total: this.mergedCatalog().count };
   }
 
+  /**
+   * 选中的目录不一定是动作库本身 —— 用户经常选到"装着动作库的那层文件夹"。
+   * 往下找一层：只有一个候选就用它，多个就让用户自己挑。
+   */
+  resolveLibraryDir(dir) {
+    if (existsSync(join(dir, 'actions'))) return { dir, moved: false };
+    const subs = [];
+    try {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (!e.isDirectory() || e.name.startsWith('.')) continue;
+        if (existsSync(join(dir, e.name, 'actions'))) subs.push(join(dir, e.name));
+      }
+    } catch { /* 读不动就当没有 */ }
+    if (subs.length === 1) return { dir: subs[0], moved: true };
+    if (subs.length > 1) {
+      throw new Error(`这个文件夹下面有 ${subs.length} 个像动作库的目录，请选具体一个：${subs.map((p) => basename(p)).join('、')}`);
+    }
+    throw new Error(`这个目录里没有 actions/（不像动作库）：${dir}`);
+  }
+
   setLibrary(value) {
     if (typeof value !== 'string' || !value.trim()) throw new Error('没有给出目录');
     const clean = normalize(value.trim());
@@ -368,31 +464,147 @@ export class ExtraActionsWorld {
     if (!isAbsolute(clean)) throw new Error(`要绝对路径：${clean}`);
     if (!existsSync(clean)) throw new Error(`目录不存在：${clean}`);
     if (!statSync(clean).isDirectory()) throw new Error(`不是目录：${clean}`);
-    if (!existsSync(join(clean, 'actions'))) throw new Error(`这个目录不像动作库（缺 actions/）：${clean}`);
-    this.saveSettings({ libraryDir: clean });
+    const r = this.resolveLibraryDir(clean);
+    this.saveSettings({ libraryDir: r.dir });
     this._figuresDir = null;
-    return { ok: true, libraryDir: this.libraryDir() };
+    this.bustCatalog();
+    return {
+      ok: true,
+      libraryDir: r.dir,
+      moved: r.moved,
+      note: r.moved ? `你选的是上一级，已自动定位到里面的「${basename(r.dir)}」` : '',
+    };
   }
 
-  /** 在用户选的目录里建自带的示例动作库，并把动作库指向那里。 */
+  /**
+   * 一键（重新）得到一个空的深深形象包。
+   *
+   * - 不给 `target`：老语义（有就修、没有才建、绝不重复造）。
+   * - 给了 `target`：就在你选的位置建（选中的是某个根 → 在它下面按 `name` 建；选中的已是包 → 就地修）。
+   *   落点必须落在 Coo 认识的某个形象包根里，否则桌宠看不到，这里直接拒绝并列出可用根。
+   */
+  async restoreShenshenPack(target = '', name = '') {
+    const roots = this.figureRoots();
+    const r = restorePack({
+      pkgDir: join(HERE, '..'),
+      roots: () => roots,
+      target,
+      name: safePackName(name || 'shenshen-actions'),
+      log: (msg) => this.host?.log?.info?.(msg),
+    });
+    this.bustCatalog();
+    return { ...r, roots };
+  }
+
+  /** 在用户选的目录下用自带示例建一个动作库并设为当前库（沿用作者 0.3.9 的做法）。 */
   async useStarterLibrary(parentDir) {
     const lib = typeof parentDir === 'string' ? parentDir.trim() : '';
     if (!lib) throw new Error('没有选择目录');
     const r = installStarterLibrary({ pkgDir: join(HERE, '..'), parentDir: lib, log: (m) => this.host?.log?.info?.(m) });
     this.saveSettings({ libraryDir: r.path });
     this.bustCatalog();
+    this.host?.log?.info?.(`额外动作拓展：自带示例库已就绪 → ${r.path}`);
     return { ok: true, ...r, libraryDir: r.path };
   }
 
-  /** 一键（重新）得到一个空的深深形象包；同时只允许存在一个。 */
-  async restoreShenshenPack() {
-    const r = restorePack({
-      pkgDir: join(HERE, '..'),
-      figuresDir: () => this.figuresDir(),
-      log: (msg) => this.host?.log?.info?.(msg),
+  /**
+   * 「自动寻找动作库」：把机器上像动作库的地方扫一遍，列出来让人点，不用自己摸路径。
+   *
+   * 候选来源（都不写死路径，全部从环境里推）：
+   *   1. 当前设置的库、`<dataDir>/shenshen-library`（自带那份）
+   *   2. 每个形象包根本身、以及根下面每个带 `actions/` 的包
+   *   3. 用户目录里的常见位置（桌面 / 文档 / 下载）中名字像「动作库 / actions / shenshen」的目录，
+   *      以及名字不像但恰好含 `actions/` 的目录
+   *   4. `SHENSHEN_LIBRARY` 环境变量指的那个
+   * 每个候选只用 `scanLibrary` 数模块，扫不到模块的不算候选。
+   */
+  findLibraries() {
+    const seen = new Map();
+    const add = (dir, source) => {
+      if (typeof dir !== 'string' || !dir.trim()) return;
+      const abs = resolve(dir.trim());
+      if (seen.has(abs)) return;
+      const health = libraryHealth(abs);
+      if (!health || health.count === 0) return;
+      seen.set(abs, {
+        dir: abs,
+        count: health.count,
+        categories: health.categories,
+        source,
+        current: false,
+      });
+    };
+
+    const settings = this.settings();
+    add(settings.libraryDir, '当前设置');
+    add(process.env.SHENSHEN_LIBRARY ?? '', 'SHENSHEN_LIBRARY');
+    add(join(this.dataDir, 'shenshen-library'), '插件自带');
+    add(join(HERE, '..', 'assets', 'starter', 'library'), '插件内置示例');
+
+    for (const root of this.figureRoots()) {
+      add(root, '形象包根');
+      let entries;
+      try { entries = readdirSync(root, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith('.')) continue;
+        add(join(root, e.name), '形象包里的动作');
+      }
+    }
+
+    /* 用户目录里常见位置：只翻一层、只看名字像的，别把整块盘扫了 */
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    const nameLike = /动作库|动作|actions|shenshen|library|库/i;
+    for (const base of ['Desktop', 'OneDrive/Desktop', 'Documents', 'Downloads'].map((d) => join(home, d))) {
+      let entries;
+      try { entries = readdirSync(base, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const dir = join(base, e.name);
+        // 名字像 → 直接当候选；名字不像但里面就有 actions/ → 也算
+        if (nameLike.test(e.name) || existsSync(join(dir, 'actions'))) add(dir, '常见位置');
+      }
+    }
+
+    const libraries = [...seen.values()]
+      .map((l) => ({ ...l, current: !!settings.libraryDir && resolve(settings.libraryDir) === l.dir }))
+      .sort((a, b) => Number(b.current) - Number(a.current) || b.count - a.count);
+    return { ok: true, libraries, count: libraries.length, dataDir: this.dataDir, roots: this.figureRoots() };
+  }
+
+  /**
+   * 全套动作的**固定目录**：以 `assets/catalog.json` 为准，每条给出
+   * `actions/<分类>/<id>` 这个固定位置，以及当前库里有没有。
+   *
+   * 用途：目录名不再随用户放哪而变 —— 想补某个动作，只要让那个动作出现在
+   * `actions/<分类>/<id>/` 里（下载单段、或用「添加更多动作…」收进来，两者都落到这里）。
+   */
+  fixedDirs() {
+    const lib = this.libraryDir();
+    const libOk = !!lib && existsSync(join(lib, 'actions'));
+    const onDisk = libOk ? scanLibrary(lib) : new Map();
+    const dirs = this.bundle.actions.map((a) => {
+      const clip = `actions/${a.category}/${a.id}`;
+      const have = onDisk.has(a.id);
+      return {
+        id: a.id,
+        zh: a.zh,
+        category: a.category,
+        catZh: CATEGORY_ZH[a.category] ?? a.category,
+        word: a.word ?? null,
+        frames: a.frames,
+        seconds: a.seconds,
+        dir: clip,
+        abs: libOk ? join(lib, ...clip.split('/')) : '',
+        present: have,
+      };
     });
-    this.bustCatalog();
-    return r;
+    return {
+      ok: true,
+      library: { dir: lib, ok: libOk },
+      count: dirs.length,
+      present: dirs.filter((d) => d.present).length,
+      dirs,
+    };
   }
 
   /** 由 action.json 重生成 actions/index.js —— 清单和磁盘对不上时的万能修复。 */
@@ -418,10 +630,12 @@ export class ExtraActionsWorld {
     return { ok: true, pack: pack.id, ...r, hint: RELOAD_HINT };
   }
 
-  /** 拿到的 packDir 必须真在 figures 目录下面，否则不写。 */
+  /** 拿到的 packDir 必须真在某个形象包根下面，否则不写。 */
   assertPackInside(dir) {
-    const root = this.figuresDir();
-    if (!isInside(root, dir)) throw new Error(`形象包不在 figures 目录里：${dir}`);
+    const roots = this.figureRoots();
+    if (!roots.some((root) => isInside(root, dir))) {
+      throw new Error(`形象包不在任何形象包目录里：${dir}（可用：${roots.join('；')}）`);
+    }
     return dir;
   }
 
@@ -437,15 +651,34 @@ export class ExtraActionsWorld {
     if (!libraryDir || !existsSync(libraryDir)) throw new Error('动作库目录没设置好（右边「选择动作库」）');
 
     this.bustCatalog();
+    const merged = this.mergedCatalog();
+    // 库里没补齐的（present=false）不能写：帧不在，拷进去必然是坏的。
+    // 挑出来单独报告，而不是丢一个"库里缺 f_0001.webp"的笼统错误。
+    const byId = new Map(merged.actions.map((a) => [a.id, a]));
+    const wanted = [];
+    const absent = [];
+    for (const id of ids) {
+      const a = byId.get(String(id));
+      if (!a) continue;
+      if (a.present === false) { absent.push(a.id); continue; }
+      wanted.push(a.id);
+    }
+    if (!wanted.length) {
+      throw new Error(absent.length
+        ? `勾的 ${absent.length} 段动作库里还没有（缺帧）：${absent.slice(0, 8).join('、')}${absent.length > 8 ? '…' : ''} —— 先把它们放进动作库再保存`
+        : '没有勾选任何可写进包的动作');
+    }
     const result = save({
       packDir: pack.dir,
-      ids,
-      catalog: this.mergedCatalog().actions,
+      ids: wanted,
+      catalog: merged.actions,
       libraryDir,
       pack: { id: pack.id, name: pack.name },
     });
+    if (absent.length) result.skippedMissing = absent;
     this.host?.log?.info?.(`额外动作拓展：${pack.id} 写入 ${result.count} 段`, {
       copied: result.copied.length, skipped: result.skipped.length, removed: result.removed.length,
+      missing: absent.length,
     });
 
     return { ok: true, pack: pack.id, ...result, hint: RELOAD_HINT };
