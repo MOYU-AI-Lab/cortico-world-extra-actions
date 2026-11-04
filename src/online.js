@@ -18,23 +18,31 @@ import { extractTarGz } from './tar.js';
 /** 维护者把 Gitee 仓库的 raw/下载前缀填这里（末尾不要带斜杠）。 */
 export const DEFAULT_REMOTE = '';
 
-/** 动作库的分片 npm 包（npmmirror 会自动镜像，国内直连）。sha256 用于完整性校验。 */
+/** 动作库分片：主源 Gitee（国内直连快），sha256 用于完整性校验。 */
 export const LIB_PARTS = [
-  { name: 'cortico-world-shenshen-lib-1', version: '1.0.0', modules: 15, bytes: 51758812, sha256: 'db10bf40ae3078d087966b048fd1ab9704b16ffd99179e80799e75ddf2efc1ca' },
-  { name: 'cortico-world-shenshen-lib-2', version: '1.0.0', modules: 15, bytes: 53693012, sha256: '541bb2ce6ee0ccc53aa9437213ec15e7b981ee0edb04b33037d941c235b6fcff' },
-  { name: 'cortico-world-shenshen-lib-3', version: '1.0.0', modules: 15, bytes: 53643090, sha256: 'b4a908bf0c4fb778829e13ca230801d3110935104d6b5b2e692131372e946182' },
-  { name: 'cortico-world-shenshen-lib-4', version: '1.0.0', modules: 13, bytes: 53889958, sha256: 'c528c70954cb20afb57568c85ada3b6af8ca274a059bde9c2cba8774e37f65fe' },
-  { name: 'cortico-world-shenshen-lib-5', version: '1.0.0', modules: 13, bytes: 52249938, sha256: '575b60e97fe87198dc9794f3848b6cfd422238df081810ac7169c804cfa80212' },
-  { name: 'cortico-world-shenshen-lib-6', version: '1.0.0', modules: 14, bytes: 51269171, sha256: '19b06067b724555e36633ba63f0696631287278447e78d4a0606509de4b03f64' },
-  { name: 'cortico-world-shenshen-lib-7', version: '1.0.0', modules: 14, bytes: 51556774, sha256: 'a533d38e5504156539bbbdcf4bf231d6162f9033a83ab82317cd5c72be934a6e' },
-  { name: 'cortico-world-shenshen-lib-8', version: '1.0.0', modules: 6, bytes: 20030747, sha256: 'ac8fdf8c0927369226ca09f646f2a8a40c167a954260670463c64727713d0a81' },
+  { name: 'cortico-world-shenshen-lib-1', version: '1.0.0', modules: 15, bytes: 51758812, sha256: 'db10bf40ae3078d087966b048fd1ab9704b16ffd99179e80799e75ddf2efc1ca',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-1.tgz' },
+  { name: 'cortico-world-shenshen-lib-2', version: '1.0.0', modules: 15, bytes: 53693012, sha256: '541bb2ce6ee0ccc53aa9437213ec15e7b981ee0edb04b33037d941c235b6fcff',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-2.tgz' },
+  { name: 'cortico-world-shenshen-lib-3', version: '1.0.0', modules: 15, bytes: 53643090, sha256: 'b4a908bf0c4fb778829e13ca230801d3110935104d6b5b2e692131372e946182',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-3.tgz' },
+  { name: 'cortico-world-shenshen-lib-4', version: '1.0.0', modules: 13, bytes: 53889958, sha256: 'c528c70954cb20afb57568c85ada3b6af8ca274a059bde9c2cba8774e37f65fe',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-4.tgz' },
+  { name: 'cortico-world-shenshen-lib-5', version: '1.0.0', modules: 13, bytes: 52249938, sha256: '575b60e97fe87198dc9794f3848b6cfd422238df081810ac7169c804cfa80212',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-5.tgz' },
+  { name: 'cortico-world-shenshen-lib-6', version: '1.0.0', modules: 14, bytes: 51269171, sha256: '19b06067b724555e36633ba63f0696631287278447e78d4a0606509de4b03f64',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-6.tgz' },
+  { name: 'cortico-world-shenshen-lib-7', version: '1.0.0', modules: 14, bytes: 51556774, sha256: 'a533d38e5504156539bbbdcf4bf231d6162f9033a83ab82317cd5c72be934a6e',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-7.tgz' },
+  { name: 'cortico-world-shenshen-lib-8', version: '1.0.0', modules: 6, bytes: 20030747, sha256: 'ac8fdf8c0927369226ca09f646f2a8a40c167a954260670463c64727713d0a81',
+    url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-8.tgz' },
 ];
 
-/** 分片 tarball 地址：国内优先 npmmirror，失败再退回官方 registry。 */
+/** 每片的候选地址：Gitee 优先，官方 npm 兜底（npm 分片可能会被撤，404 会立刻跳过）。 */
 export const partTarballs = (p) => [
-  `https://registry.npmmirror.com/${p.name}/-/${p.name}-${p.version}.tgz`,
+  p.url,
   `https://registry.npmjs.org/${p.name}/-/${p.name}-${p.version}.tgz`,
-];
+].filter(Boolean);
 
 const MAX_LIBRARY_BYTES = 800 * 1024 * 1024;     // 完整库上限
 const MAX_ACTION_BYTES = 32 * 1024 * 1024;       // 单个动作上限
