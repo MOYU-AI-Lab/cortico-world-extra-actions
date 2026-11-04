@@ -8,7 +8,7 @@
  * 面板（dist/webui.js）只做界面，所有落盘都在 writer.js 里，所以"面板保存"和"命令行保存"结果一致。
  * 这个文件不直接碰文件内容，只做发现、校验和转发。
  */
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
@@ -37,6 +37,18 @@ const CATEGORY_ZH = {
 };
 /** 一次最多勾多少（writer 里也有同一道闸）。 */
 const MAX_SELECTION = 300;
+/** 动作 id / 分类名和形象包 id 同一套白名单。 */
+const ACTION_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const CATEGORY_ID = /^[a-z][a-z0-9-]{0,15}$/;
+/**
+ * 行内预览（面板点「预览」）的上限：库里的 anim.webp 一般是 1.7–7.7 MB，
+ * 转成 base64 再乘 1.34，一条 RPC 就是十几 MB。再大就不回传了 —— 面板会提示，
+ * 而不是把内存和 IPC 拖死。
+ */
+const PREVIEW_MAX_BYTES = 12 * 1024 * 1024;
+/** 同一段反复点不该反复读盘：按「id#大小」留最近几条（每条最大约 16 MB 的字符串）。 */
+const PREVIEW_CACHE = new Map();
+const PREVIEW_CACHE_MAX = 3;
 
 const readJson = (file, fallback = null) => {
   try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return fallback; }
@@ -142,6 +154,44 @@ export class ExtraActionsWorld {
     return data;
   }
 
+  /**
+   * 行内预览：把库里这一段的高清动图读成 data URL 交给面板。
+   *
+   * 只读、只认动作库里的 `actions/<分类>/<id>/anim.webp`，别的路径一概不碰：
+   *   - id 先过白名单，分类也从清单里取（不信任面板传来的任何路径片段）；
+   *   - 拼出来的目录必须仍在库里（isInside）；符号链接、非常规文件一律拒绝；
+   *   - 超过 PREVIEW_MAX_BYTES 的不回传，直接报一句人话；
+   *   - 按「id#大小」缓存最近几条，重复点不重复读盘。
+   * 没有这个文件（只有老格式帧序列）也照实说，不去拼 f_NNNN.webp。
+   */
+  preview(id) {
+    if (!ACTION_ID.test(id)) throw new Error('动作 id 不合法');
+    const lib = this.libraryDir();
+    if (!lib) throw new Error('动作库还没设置');
+    const hit = this.mergedCatalog().actions.find((x) => x.id === id && x.present !== false);
+    if (!hit) throw new Error('库里没有这一段，先补进动作库再用预览');
+    const category = String(hit.category ?? '');
+    if (!CATEGORY_ID.test(category)) throw new Error('这一段的分类名不合法');
+    const dir = join(lib, 'actions', category, id);
+    if (!isInside(lib, dir)) throw new Error('路径越界');
+    const file = join(dir, 'anim.webp');
+    const st = lstatSync(file, { throwIfNoEntry: false });
+    if (!st || st.isSymbolicLink() || !st.isFile()) {
+      throw new Error('这一段没有 anim.webp（老格式帧序列不支持面板内预览）');
+    }
+    if (st.size > PREVIEW_MAX_BYTES) {
+      throw new Error(`这一段 ${(st.size / 1024 / 1024).toFixed(1)} MB，超过预览上限 ${PREVIEW_MAX_BYTES / 1024 / 1024} MB`);
+    }
+    const key = `${id}#${st.size}`;
+    const meta = { id, zh: hit.zh, category, bytes: st.size };
+    const cached = PREVIEW_CACHE.get(key);
+    if (cached) return { ...meta, dataUrl: cached, cached: true };
+    const dataUrl = 'data:image/webp;base64,' + readFileSync(file).toString('base64');
+    if (PREVIEW_CACHE.size >= PREVIEW_CACHE_MAX) PREVIEW_CACHE.clear();
+    PREVIEW_CACHE.set(key, dataUrl);
+    return { ...meta, dataUrl, cached: false };
+  }
+
   envPromptVars() { return {}; }
 
   /* ---------- 设置 ---------- */
@@ -156,6 +206,10 @@ export class ExtraActionsWorld {
     return {
       libraryDir: pick(fromCfg.libraryDir) || pick(file.libraryDir) || pick(this.bundle.library),
       figuresDir: pick(fromCfg.figuresDir) || pick(file.figuresDir),
+      /** 首次打开面板的「完整动作库还没下载」提示，用户点过“知道了”就再也不弹。 */
+      onboardSeen: fromCfg.onboardSeen === true || file.onboardSeen === true,
+      /** 完整动作库的下载源地址（外部镜像，比如 Gitee 仓库页面），面板据此给按钮。 */
+      downloadUrl: pick(fromCfg.downloadUrl) || pick(file.downloadUrl),
     };
   }
 
@@ -345,6 +399,9 @@ export class ExtraActionsWorld {
         return this.prune(this.cleanPackId(a[0]));
       case 'reindex':
         return this.reindex();
+      case 'preview':
+        // args: [动作 id] → { id, zh, category, bytes, dataUrl, cached }
+        return this.preview(typeof a[0] === 'string' ? a[0].trim() : '');
       case 'restore-pack':
         // args: [落点目录(可选), 包名(可选)]
         return this.restoreShenshenPack(typeof a[0] === 'string' ? a[0] : '', typeof a[1] === 'string' ? a[1] : '');
@@ -365,6 +422,17 @@ export class ExtraActionsWorld {
         return this.removeAction(this.cleanPackId(a[0]), String(a[1] ?? '').trim());
       case 'set-library':
         return this.setLibrary(a[0]);
+      case 'dismiss-onboard': {
+        // 用户点过「知道了」：记进 config.json，以后不再弹
+        this.saveSettings({ onboardSeen: true });
+        return { ok: true, onboard: { seen: true, downloadUrl: this.settings().downloadUrl || '' } };
+      }
+      case 'set-download-url': {
+        const url = typeof a[0] === 'string' ? a[0].trim() : '';
+        if (url && !/^https?:\/\//i.test(url)) throw new Error('下载地址要以 http(s):// 开头');
+        this.saveSettings({ downloadUrl: url.slice(0, 500) });
+        return { ok: true, downloadUrl: url.slice(0, 500) };
+      }
       default:
         throw new Error(`unknown method: ${method}`);
     }
@@ -384,7 +452,9 @@ export class ExtraActionsWorld {
     const libOk = !!libraryDir && existsSync(libraryDir);
     const figs = await this.figures();
     const pick = figs.find((f) => f.supported && !f.builtin) ?? figs.find((f) => f.supported) ?? null;
+    const st = this.settings();
     return {
+      onboard: { seen: st.onboardSeen === true, downloadUrl: st.downloadUrl || '' },
       figures: figs,
       current: figs.find((f) => f.current)?.id ?? null,
       pick: pick?.id ?? null,
