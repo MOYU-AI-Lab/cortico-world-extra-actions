@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
 import { ensureStarter, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
-import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, actionUrl, flatActionUrl, installAction, installLibrary, libraryUrl } from './online.js';
+import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, libraryUrl } from './online.js';
 import { petFigures, petState } from './pet.js';
 
 const ID = 'extra-actions';
@@ -535,10 +535,35 @@ export class ExtraActionsWorld {
   /** 一键：下载完整动作库 → 解压进动作库 → 设为当前库。 */
   async downloadLibrary() {
     const info = this.downloadInfo();
+    const existing = this.libraryDir();
+    // 没配自家源时：走 npm 分片（国内走 npmmirror，比 GitHub 稳）
+    if (!info.base && LIB_PARTS.length) {
+      const dest = existing && existsSync(existing) ? existing : join(this.dataDir, 'shenshen-library');
+      const r = await installLibraryParts({
+        dest,
+        log: (m) => this.host?.log?.info?.(m),
+        onProgress: (i, n) => this.host?.log?.info?.(`动作库 ${i}/${n} 片`),
+      });
+      // 分片有失败（镜像没同步等）时就再用整包兜一次，别让用户停在半截
+      if (!r.ok || r.modules < 20) {
+        this.host?.log?.warn?.(`分片装了 ${r.modules} 段（失败 ${r.failed} 片），改用整包兜底`);
+        try {
+          const z = await installLibrary({ url: FALLBACK_LIBRARY, libraryDir: r.path, dataDir: this.dataDir, log: (m) => this.host?.log?.info?.(m) });
+          this.saveSettings({ libraryDir: z.path });
+          this.bustCatalog();
+          return { ok: true, ...z, libraryDir: z.path, viaZip: true };
+        } catch (e) {
+          this.host?.log?.warn?.('整包兜底也失败了：' + String(e?.message ?? e));
+        }
+      }
+      this.saveSettings({ libraryDir: r.path });
+      this.bustCatalog();
+      return { ok: r.ok, ...r, libraryDir: r.path };
+    }
     if (!info.libraryUrl) throw new Error('还没配置下载源');
     const r = await installLibrary({
       url: info.libraryUrl,
-      libraryDir: this.libraryDir(),
+      libraryDir: existing,
       dataDir: this.dataDir,
       log: (m) => this.host?.log?.info?.(m),
     });

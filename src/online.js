@@ -11,10 +11,30 @@
  */
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 import { extractZip, listZip } from './zip.js';
+import { extractTarGz } from './tar.js';
 
 /** 维护者把 Gitee 仓库的 raw/下载前缀填这里（末尾不要带斜杠）。 */
 export const DEFAULT_REMOTE = '';
+
+/** 动作库的分片 npm 包（npmmirror 会自动镜像，国内直连）。sha256 用于完整性校验。 */
+export const LIB_PARTS = [
+  { name: 'cortico-world-shenshen-lib-1', version: '1.0.0', modules: 15, bytes: 51758812, sha256: 'db10bf40ae3078d087966b048fd1ab9704b16ffd99179e80799e75ddf2efc1ca' },
+  { name: 'cortico-world-shenshen-lib-2', version: '1.0.0', modules: 15, bytes: 53693012, sha256: '541bb2ce6ee0ccc53aa9437213ec15e7b981ee0edb04b33037d941c235b6fcff' },
+  { name: 'cortico-world-shenshen-lib-3', version: '1.0.0', modules: 15, bytes: 53643090, sha256: 'b4a908bf0c4fb778829e13ca230801d3110935104d6b5b2e692131372e946182' },
+  { name: 'cortico-world-shenshen-lib-4', version: '1.0.0', modules: 13, bytes: 53889958, sha256: 'c528c70954cb20afb57568c85ada3b6af8ca274a059bde9c2cba8774e37f65fe' },
+  { name: 'cortico-world-shenshen-lib-5', version: '1.0.0', modules: 13, bytes: 52249938, sha256: '575b60e97fe87198dc9794f3848b6cfd422238df081810ac7169c804cfa80212' },
+  { name: 'cortico-world-shenshen-lib-6', version: '1.0.0', modules: 14, bytes: 51269171, sha256: '19b06067b724555e36633ba63f0696631287278447e78d4a0606509de4b03f64' },
+  { name: 'cortico-world-shenshen-lib-7', version: '1.0.0', modules: 14, bytes: 51556774, sha256: 'a533d38e5504156539bbbdcf4bf231d6162f9033a83ab82317cd5c72be934a6e' },
+  { name: 'cortico-world-shenshen-lib-8', version: '1.0.0', modules: 6, bytes: 20030747, sha256: 'ac8fdf8c0927369226ca09f646f2a8a40c167a954260670463c64727713d0a81' },
+];
+
+/** 分片 tarball 地址：国内优先 npmmirror，失败再退回官方 registry。 */
+export const partTarballs = (p) => [
+  `https://registry.npmmirror.com/${p.name}/-/${p.name}-${p.version}.tgz`,
+  `https://registry.npmjs.org/${p.name}/-/${p.name}-${p.version}.tgz`,
+];
 
 const MAX_LIBRARY_BYTES = 800 * 1024 * 1024;     // 完整库上限
 const MAX_ACTION_BYTES = 32 * 1024 * 1024;       // 单个动作上限
@@ -119,3 +139,39 @@ export const libraryUrl = (base) => `${String(base).replace(/\/+$/, '')}/library
 export const actionUrl = (base, category, id) => `${String(base).replace(/\/+$/, '')}/actions/${category}/${id}.zip`;
 /** 扁平布局（GitHub Release 的资产做不到子目录）：<base>/<id>.zip */
 export const flatActionUrl = (base, id) => `${String(base).replace(/\/+$/, '')}/${id}.zip`;
+
+
+/**
+ * 分片安装：逐个下载 npm 包 tarball → 校验 sha256 → 解压进动作库。
+ * 一片失败不影响已装好的；返回装了哪些模块。
+ */
+export async function installLibraryParts({ parts = LIB_PARTS, dest, log, onProgress }) {
+  mkdirSync(dest, { recursive: true });
+  const before = new Set(summarize(dest));
+  let bytes = 0;
+  let failed = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    let buf = null;
+    let lastErr = null;
+    for (const url of partTarballs(p)) {
+      try { buf = await fetchBytes(url, MAX_LIBRARY_BYTES); break; } catch (e) { lastErr = e; }
+    }
+    if (!buf) { failed++; log?.(`第 ${i + 1} 片下载失败：${lastErr?.message ?? '未知错误'}`); continue; }
+    bytes += buf.length;
+    if (p.sha256) {
+      const got = createHash('sha256').update(buf).digest('hex');
+      if (got !== p.sha256) { failed++; log?.(`第 ${i + 1} 片校验不通过，已跳过`); continue; }
+    }
+    const r = extractTarGz(buf, {
+      dest,
+      mapPath: (rel) => (rel.startsWith('package/') ? rel.slice(8) : rel),
+      onFile: (rel) => WANT.test(rel),
+    });
+    log?.(`第 ${i + 1}/${parts.length} 片：${r.files.length} 个文件`);
+    onProgress?.(i + 1, parts.length);
+  }
+  const mods = summarize(dest);
+  const added = mods.filter((m) => !before.has(m));
+  return { ok: failed === 0, path: dest, modules: mods.length, added: added.length, failed, bytes };
+}
