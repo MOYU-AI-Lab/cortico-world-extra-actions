@@ -182,6 +182,15 @@ const CSS = `<style>
   background:var(--ea-acc);color:#fff;font-size:10px;font-weight:700;margin-right:4px}
 .ea-guide .s .d{color:var(--ea-dim);font-size:11px;padding-left:19px}
 .ea-guide .a{color:var(--ea-dim);opacity:.6;padding-top:1px}
+.ea-modal{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(0,0,0,.35);padding:16px}
+.ea-modal .card{max-width:520px;background:var(--ea-bg);border:1px solid var(--ea-line);border-radius:16px;
+  padding:18px 20px;box-shadow:0 18px 60px -20px rgba(0,0,0,.5);color:var(--ea-ink)}
+.ea-modal h3{margin:0 0 8px;font-size:15px;font-weight:650}
+.ea-modal p{margin:0 0 12px;font-size:12.5px;line-height:1.75;color:var(--ea-soft)}
+.ea-modal .row{display:flex;gap:8px;align-items:center}
+.ea-modal .tip{margin-top:10px;font-size:11px;color:var(--ea-dim)}
+.ea-x.get{color:var(--ea-acc);border-color:rgba(0,168,112,.35);font-size:13px}
+.ea-x.get:hover{background:var(--ea-acc);color:#fff;border-color:transparent}
 .ea-msg{font-size:12.5px;min-height:18px;color:var(--ea-dim);transition:color .15s}
 .ea-msg.bad{color:var(--ea-danger)}
 .ea-msg.ok{color:var(--ea-ok)}
@@ -383,6 +392,7 @@ const panel = {
           </div>
         </div>
         ${mounted ? '<button class="ea-x" type="button" title="从包里删掉这一段" aria-label="删除">×</button>' : ''}
+        ${off && state?.download?.perAction && a.word ? '<button class="ea-x get" type="button" data-act="get-action" data-id="' + esc(a.id) + '" title="从下载源补这一段（不跳转，直接装进动作库）" aria-label="下载">↓</button>' : ''}
         <input type="checkbox" ${on ? 'checked' : ''} ${isState || off ? 'disabled' : ''}>`;
       if (!isState && !off) {
         const box = row.querySelector('input');
@@ -496,7 +506,9 @@ const panel = {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
         const smallLib = state.library.ok && (state.library.present ?? state.library.count) < 20
-        ? `<b>当前动作库只有 ${state.library.present ?? state.library.count} 段</b>（插件自带的示例）。想要全部 105 段：去 <a href="https://github.com/MOYU-AI-Lab/cortico-world-extra-actions/releases" target="_blank" rel="noreferrer">Releases 页</a> 下载 <code>shenshen-action-library.zip</code>，解压后点「选择动作库位置…」指到里面的 <code>深深-动作库</code>（选它的上一级也行，会自动定位）。<br>`
+        ? `<b>当前动作库只有 ${state.library.present ?? state.library.count} 段</b>（插件自带的示例）。想要全部 105 段：
+            <button class="ea-btn pri" type="button" data-act="download-library" style="margin-left:6px">一键下载并安装</button>
+            <span class="ea-dim">（插件自己下、自己解压，不用你选文件夹）</span><br>`
         : '';
       noteEl.innerHTML = smallLib + `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点「自动寻找动作库…」让它自己找，或用「选择动作库…」指到那个文件夹。`;
         return;
@@ -568,6 +580,20 @@ const panel = {
       renderList(); renderInstalled(); renderSum(); renderNote();
     };
     qInp.oninput = () => { query = qInp.value.trim(); renderList(); };
+
+    async function doDownloadLibrary() {
+      busy(true);
+      say('正在下载完整动作库…（约 370 MB，视网速几分钟，别关这个页面）');
+      try {
+        const r = await ctx.invoke('download-library', []);
+        say(`动作库已装好：${r.modules} 段 → ${r.path}`);
+        await loadAll();
+      } catch (err) {
+        say('下载没成功：' + String(err?.message ?? err), true);
+      } finally {
+        busy(false);
+      }
+    }
 
     wrap.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-act]');
@@ -700,6 +726,18 @@ const panel = {
               ? r.added.map((x) => `${x.zh}（${x.frames} 帧 / ${x.seconds}s）`).join('、')
               : (r.skipped.map((x) => `${x.dir}：${x.reason}`).join('；') || '');
           }
+        } else if (act === 'download-library') {
+          await doDownloadLibrary();
+        } else if (act === 'get-action') {
+          const id = btn.dataset.id;
+          if (!id) return;
+          const item = catalog?.actions?.find((a) => a.id === id);
+          busy(true); say(`正在下载「${item?.zh ?? id}」…`);
+          try {
+            await ctx.invoke('download-action', [id, item?.category ?? '']);
+            await loadAll();
+            say(`「${item?.zh ?? id}」已装进动作库`);
+          } finally { busy(false); }
         } else if (act === 'library') {
           // 协议里 PathPickerOptions.kind 只有 'file' | 'directory'
           const dir = await ctx.pickPath({ kind: 'directory', title: '选择动作库目录（里面要有 actions/）' });
@@ -716,8 +754,39 @@ const panel = {
       }
     });
 
+    /* 首次进入（库里只有自带示例）时问一次：要不要一键装完整动作库 */
+    let askedDownload = false;
+    function maybeAskDownload() {
+      if (askedDownload || !state) return;
+      const have = state.library?.present ?? state.library?.count ?? 0;
+      const total = state.library?.count ?? 0;
+      if (!state.library?.ok || have >= 20 || !state.download?.libraryUrl) return;
+      askedDownload = true;
+      const box = el('div', 'ea-modal');
+      box.innerHTML = `
+        <div class="card">
+          <h3>要装完整动作库吗？</h3>
+          <p>现在只有插件自带的 ${have} 段示例（目录一共 ${total} 段）。
+             完整的 105 段可以直接让插件下载并装好 —— <b>不用解压、不用选文件夹</b>，装完列表立刻能用。</p>
+          <div class="row">
+            <button class="ea-btn pri" type="button" data-act="download-library">现在就下载</button>
+            <button class="ea-btn" type="button" data-act="close">稍后</button>
+          </div>
+          <div class="tip">下载量约 370 MB，视网速几分钟；装到 Coopanion 数据目录里的 shenshen-library。</div>
+        </div>`;
+      box.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const act = btn.dataset.act;
+        if (act === 'close') { box.remove(); return; }
+        if (act === 'download-library') { await doDownloadLibrary(); box.remove(); }
+      });
+      wrap.appendChild(box);
+    }
+
     try {
       await loadAll();
+      maybeAskDownload();
     } catch (err) {
       wrap.innerHTML = `<div class="ea-note bad">加载失败：${esc(err?.message ?? err)}</div>`;
     }

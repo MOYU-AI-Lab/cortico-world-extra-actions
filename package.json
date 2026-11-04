@@ -1,9 +1,9 @@
 {
   "name": "cortico-world-extra-actions",
-  "version": "0.3.17",
+  "version": "0.3.20",
   "private": false,
   "type": "module",
-  "description": "勾选动作库里的动作，写进角色包的「额外动作拓展」文件夹，让桌宠照着做。105 条目录固定；动作库可自动寻找、可自选位置；空角色包位置自选。",
+  "description": "勾选动作库里的动作，写进形象包的「额外动作拓展」文件夹，让桌宠照着做。自带入门形象包与示例动作；完整 105 段可一键下载安装（不用解压、不用选文件夹）。",
   "keywords": [
     "cortico-world",
     "coopanion",

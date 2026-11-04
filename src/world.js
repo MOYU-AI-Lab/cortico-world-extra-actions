@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
 import { ensureStarter, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
+import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, actionUrl, flatActionUrl, installAction, installLibrary, libraryUrl } from './online.js';
 import { petFigures, petState } from './pet.js';
 
 const ID = 'extra-actions';
@@ -365,6 +366,10 @@ export class ExtraActionsWorld {
         return this.removeAction(this.cleanPackId(a[0]), String(a[1] ?? '').trim());
       case 'set-library':
         return this.setLibrary(a[0]);
+      case 'download-library':
+        return this.downloadLibrary();
+      case 'download-action':
+        return this.downloadAction(String(a[0] ?? ''), String(a[1] ?? ''));
       default:
         throw new Error(`unknown method: ${method}`);
     }
@@ -400,6 +405,7 @@ export class ExtraActionsWorld {
         categories: [...new Set(merged.actions.map((a) => a.category))]
           .map((c) => ({ id: c, zh: CATEGORY_ZH[c] ?? c, count: merged.actions.filter((a) => a.category === c).length })),
       },
+      download: this.downloadInfo(),
       folder: EXTRA_DIR,
       figuresDir: this.figuresDir(),
       roots: this.figureRoots(),
@@ -494,6 +500,70 @@ export class ExtraActionsWorld {
     });
     this.bustCatalog();
     return { ...r, roots };
+  }
+
+  /* ---------- 在线下载：用户不用解压、不用选文件夹 ---------- */
+
+  /** 下载源：设置里的 remoteBase（Gitee 等），没配就退回 GitHub 直链。 */
+  remoteBase() {
+    const c = this.ctx.cfg && typeof this.ctx.cfg === 'object' ? this.ctx.cfg : {};
+    const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim().replace(/\/+$/, '') : '');
+    return pick(c.remoteBase) || '';
+  }
+
+  /** 单段动作的地址前缀（GitHub Release 的资产是扁平的，没有 actions/<分类>/ 这层）。 */
+  remoteActionBase() {
+    const c = this.ctx.cfg && typeof this.ctx.cfg === 'object' ? this.ctx.cfg : {};
+    const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim().replace(/\/+$/, '') : '');
+    return pick(c.remoteActionBase) || FALLBACK_ACTION_BASE;
+  }
+
+  /** 面板需要知道：完整库从哪下、能不能单个下。 */
+  downloadInfo() {
+    const base = this.remoteBase();
+    const actionBase = this.remoteActionBase();
+    return {
+      base,
+      actionBase,
+      libraryUrl: base ? libraryUrl(base) : FALLBACK_LIBRARY,
+      // 完整库有 GitHub 兜底；单段必须有专门的前缀
+      perAction: !!(actionBase || base),
+      flat: !!actionBase,
+    };
+  }
+
+  /** 一键：下载完整动作库 → 解压进动作库 → 设为当前库。 */
+  async downloadLibrary() {
+    const info = this.downloadInfo();
+    if (!info.libraryUrl) throw new Error('还没配置下载源');
+    const r = await installLibrary({
+      url: info.libraryUrl,
+      libraryDir: this.libraryDir(),
+      dataDir: this.dataDir,
+      log: (m) => this.host?.log?.info?.(m),
+    });
+    this.saveSettings({ libraryDir: r.path });
+    this.bustCatalog();
+    this.host?.log?.info?.(`动作库已装好：${r.modules} 段（新增 ${r.added}）`);
+    return { ok: true, ...r, libraryDir: r.path };
+  }
+
+  /** 单个动作：从 <base>/actions/<分类>/<id>.zip 取，直接装进动作库。 */
+  async downloadAction(id, category) {
+    const info = this.downloadInfo();
+    if (!info.perAction) throw new Error('还没配置单动作下载源（remoteBase）');
+    const lib = this.libraryDir();
+    if (!lib) throw new Error('动作库还没设置好');
+    const url = info.flat ? flatActionUrl(info.actionBase, id) : actionUrl(info.base, category, id);
+    const r = await installAction({
+      url,
+      libraryDir: lib,
+      category,
+      id,
+      log: (m) => this.host?.log?.info?.(m),
+    });
+    this.bustCatalog();
+    return { ok: true, ...r };
   }
 
   /** 在用户选的目录下用自带示例建一个动作库并设为当前库（沿用作者 0.3.9 的做法）。 */
