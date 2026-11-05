@@ -31,11 +31,21 @@ const CSS = `<style>
   --ea-acc:var(--accent,#00a870);--ea-on:var(--on-accent,#082a1e);
   --ea-danger:var(--danger,#b45950);--ea-ok:var(--ok,#19815e);--ea-warn:var(--warn,#96743b);
   --ea-r:14px;
+  /* 面板是一列：中间内容自己滚，底栏绝对定位贴死在面板底边（浮在内容之上） */
+  display:flex;
+  flex-direction:column;
+  position:relative;
+  height:100%;
+  max-height:100%;
+  min-height:0;
+  min-width:0;
   color:var(--ea-ink);
   font:13px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI","Microsoft YaHei",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;
 }
 .ea *{box-sizing:border-box}
+/* 全部直角：面板里所有圆角一律取消（卡片、按钮、胶囊、徽标、缩略图、底栏都对上边） */
+.ea,.ea *,.ea *::before,.ea *::after{border-radius:0 !important}
 .ea button,.ea input,.ea select{font:inherit;color:inherit}
 .ea b{font-weight:600}
 .ea code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:11.5px;
@@ -58,10 +68,15 @@ const CSS = `<style>
 .ea-sel,.ea-inp{border:1px solid var(--ea-line);background:var(--ea-bg);color:var(--ea-ink);border-radius:10px;
   padding:8px 11px;font-size:12.5px;max-width:100%;transition:border-color .15s,box-shadow .15s}
 .ea-sel{min-width:210px;flex:1 1 210px}
+.ea-chk{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ea-soft);cursor:pointer;
+  padding:7px 10px;border:1px solid var(--ea-line);background:var(--ea-bg);white-space:nowrap}
+.ea-chk input{margin:0;cursor:pointer}
+.ea-chk:hover{border-color:var(--ea-line2);color:var(--ea-ink)}
 .ea-inp{flex:1 1 150px;min-width:130px}
 .ea-inp::placeholder{color:var(--ea-dim)}
 .ea-sel:focus,.ea-inp:focus{outline:none;border-color:var(--ea-acc);box-shadow:0 0 0 3px rgba(0,168,112,.14)}
-.ea-lib{font-size:11.5px;color:var(--ea-dim);white-space:nowrap}
+.ea-lib{font-size:11.5px;color:var(--ea-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  min-width:0;max-width:100%;flex:0 1 auto}
 
 /* 按钮 */
 .ea-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ea-line);background:var(--ea-bg);
@@ -79,6 +94,7 @@ const CSS = `<style>
 
 /* 提示条 */
 .ea-note{font-size:12px;color:var(--ea-soft);margin:0 0 12px;padding:10px 12px;border-radius:12px;
+  min-width:0;overflow-wrap:anywhere;word-break:break-word;
   background:var(--ea-paper);border:1px solid var(--ea-line);line-height:1.75}
 .ea-note.warn{color:var(--ea-warn);background:rgba(150,116,59,.08);border-color:rgba(150,116,59,.28)}
 .ea-note.bad{color:var(--ea-danger);background:rgba(180,89,80,.08);border-color:rgba(180,89,80,.28)}
@@ -111,6 +127,11 @@ const CSS = `<style>
 .ea-pill button{border:0;background:transparent;color:var(--ea-dim);cursor:pointer;font-size:14px;line-height:1;
   padding:2px 5px;border-radius:50%;transition:all .15s}
 .ea-pill button:hover{color:#fff;background:var(--ea-danger)}
+/* 已装条折叠：段数多的时候只显示前几段，剩下的收起来 */
+.ea-installed .inst-toggle{border:1px solid var(--ea-line);background:var(--ea-sheet2);color:var(--ea-dim);
+  cursor:pointer;font-size:11.5px;padding:3px 10px;border-radius:999px;transition:all .15s}
+.ea-installed .inst-toggle:hover{color:var(--ea-fg);border-color:var(--ea-line2);background:var(--ea-sheet3)}
+.ea-installed .more{color:var(--ea-dim);font-size:11.5px}
 
 /* 分区标题 */
 .ea-sec{margin:16px 0 8px;display:flex;align-items:center;gap:8px}
@@ -165,35 +186,104 @@ const CSS = `<style>
 .ea-person b{display:block;font-size:12.8px;color:var(--ea-ink);font-weight:600}
 .ea-person span{display:block;font-size:11px;color:var(--ea-dim)}
 
-/* 底栏 */
-.ea-foot{position:sticky;bottom:0;margin-top:16px;padding:12px 0 4px;display:flex;gap:10px;align-items:center;
-  flex-wrap:wrap;border-top:1px solid var(--ea-line);background:linear-gradient(to top,var(--ea-bg) 72%,transparent)}
-.ea-foot .sum{font-size:12.5px;color:var(--ea-soft)}
+/* 中间可滚动区：动作列表在这里滚，头部与底栏都不动。
+   padding-bottom 给"浮在底上的任务栏"留出高度（JS 里按底栏实际高度补，见 fitFoot） */
+.ea code,.ea .ea-lib,.ea .sum,.ea .ea-msg,.ea .ea-menu-body .hint{overflow-wrap:anywhere}
+.ea-pin{flex:1 1 auto;min-height:0;min-width:0;overflow-y:auto;scrollbar-gutter:stable;
+  padding-right:2px;margin-right:-2px;padding-bottom:72px}
+
+/* 首启一次性提示 */
+.ea-onboard{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.42);padding:20px}
+.ea-onboard[hidden]{display:none}
+.ea-onboard-box{max-width:420px;background:var(--ea-bg);border:1px solid var(--ea-line2);padding:16px 18px;
+  box-shadow:0 24px 48px -20px rgba(0,0,0,.5)}
+.ea-onboard-box b{display:block;font-size:14px;margin-bottom:6px}
+.ea-onboard-box p{margin:0 0 8px;font-size:12.5px;line-height:1.7;color:var(--ea-soft)}
+.ea-onboard-box p.ea-dim{color:var(--ea-dim);font-size:11.5px}
+.ea-onboard-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+
+/* 底栏＝任务栏：sticky 粘在滚动视口底部（宿主滚或面板滚都生效），浮在列表上方 */
+.ea-foot{position:absolute;left:0;right:0;bottom:0;z-index:8;margin:0;padding:10px 12px;
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  background:var(--ea-bg);                     /* 老浏览器兜底：实色 */
+  background:color-mix(in srgb, var(--ea-bg) 92%, transparent);
+  -webkit-backdrop-filter:saturate(1.15) blur(10px);
+  backdrop-filter:saturate(1.15) blur(10px);
+  border-top:1px solid var(--ea-line);
+  box-shadow:0 -14px 28px -20px rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,.04)}
+.ea-foot .sum{font-size:12.5px;color:var(--ea-soft);min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
 .ea-foot .sum b{color:var(--ea-ink);font-size:13.5px;font-variant-numeric:tabular-nums}
-.ea-foot .sp{flex:1}
-.ea-foot .ea-actions{display:flex;gap:8px;flex-wrap:wrap}
+.ea-foot .sp{flex:1 1 8px}
+.ea-foot .ea-actions{display:flex;gap:8px;flex-wrap:wrap;flex:0 0 auto}
+/* 内容底部留一点，避免最后一行贴着底栏 */
+.ea [data-role=list]{padding-bottom:2px}
+
+/* 动作库 ▾：三个"选库"入口收进一个菜单，少一排按钮 */
+.ea-menu{position:relative;display:inline-block}
+.ea-menu>summary{list-style:none;cursor:pointer}
+.ea-menu>summary::-webkit-details-marker{display:none}
+.ea-menu>summary::after{content:"";display:inline-block;width:0;height:0;margin-left:6px;vertical-align:middle;
+  border:4px solid transparent;border-top-color:currentColor;transform:translateY(1px);opacity:.7}
+.ea-menu[open]>summary{border-color:var(--ea-acc);color:var(--ea-acc)}
+.ea-menu-body{position:absolute;z-index:20;top:calc(100% + 6px);left:0;min-width:220px;padding:5px;
+  background:var(--ea-paper);border:1px solid var(--ea-line2);border-radius:12px;
+  box-shadow:0 12px 26px -14px rgba(0,0,0,.4),0 2px 6px -2px rgba(0,0,0,.2);display:flex;flex-direction:column}
+.ea-menu-body button{text-align:left;border:0;background:transparent;color:var(--ea-ink);cursor:pointer;
+  padding:8px 10px;border-radius:8px;font-size:12.5px;white-space:nowrap}
+.ea-menu-body button:hover{background:var(--ea-sheet2)}
+.ea-menu-body .sep{height:1px;margin:4px 6px;background:var(--ea-line)}
+.ea-menu-body .hint{padding:4px 10px 6px;font-size:11px;color:var(--ea-dim);white-space:normal;line-height:1.5}
 
 /* 消息行 */
 .ea-guide{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;padding:10px 12px;margin:0 0 12px;
   border:1px solid var(--ea-line);border-radius:12px;background:var(--ea-paper);font-size:12px;line-height:1.5}
 .ea-guide>b{color:var(--ea-ink);font-weight:650;white-space:nowrap;padding-top:1px}
-.ea-guide .s{display:flex;flex-direction:column;gap:1px;min-width:0;max-width:230px}
+.ea-guide .s{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 170px;max-width:260px}
 .ea-guide .s i{font-style:normal;display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;
   background:var(--ea-acc);color:#fff;font-size:10px;font-weight:700;margin-right:4px}
 .ea-guide .s .d{color:var(--ea-dim);font-size:11px;padding-left:19px}
 .ea-guide .a{color:var(--ea-dim);opacity:.6;padding-top:1px}
-.ea-modal{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(0,0,0,.35);padding:16px}
-.ea-modal .card{max-width:520px;background:var(--ea-bg);border:1px solid var(--ea-line);border-radius:16px;
-  padding:18px 20px;box-shadow:0 18px 60px -20px rgba(0,0,0,.5);color:var(--ea-ink)}
-.ea-modal h3{margin:0 0 8px;font-size:15px;font-weight:650}
-.ea-modal p{margin:0 0 12px;font-size:12.5px;line-height:1.75;color:var(--ea-soft)}
-.ea-modal .row{display:flex;gap:8px;align-items:center}
-.ea-modal .tip{margin-top:10px;font-size:11px;color:var(--ea-dim)}
-.ea-x.get{color:var(--ea-acc);border-color:rgba(0,168,112,.35);font-size:13px}
-.ea-x.get:hover{background:var(--ea-acc);color:#fff;border-color:transparent}
 .ea-msg{font-size:12.5px;min-height:18px;color:var(--ea-dim);transition:color .15s}
 .ea-msg.bad{color:var(--ea-danger)}
 .ea-msg.ok{color:var(--ea-ok)}
+
+/* 分类表头：整行可点（折叠/展开），行首一个全选复选框 */
+.ea-sec{cursor:pointer;user-select:none;border-radius:9px;padding:2px 6px 2px 2px;margin-left:-6px}
+.ea-sec:hover{background:var(--ea-sheet2)}
+.ea-sec .caret{display:inline-block;font-size:14px;line-height:1;color:var(--ea-dim);flex:none;
+  transform:rotate(90deg);transition:transform .15s}
+.ea-sec.collapsed .caret{transform:rotate(0deg)}
+.ea-sec input{accent-color:var(--ea-acc);width:15px;height:15px;flex:none;cursor:pointer;margin:0}
+.ea-sec input:disabled{cursor:default;opacity:.45}
+.ea-list[hidden]{display:none}
+
+/* 缩略图还没挂 src 时的占位（懒加载）：尺寸由 .ea-row img 给定，行不会因此跳动 */
+.ea-row img[data-role=thumb]:not([src]){background:linear-gradient(100deg,var(--ea-sheet2) 30%,var(--ea-sheet3) 50%,var(--ea-sheet2) 70%)}
+
+/* 单段下载（缺的段补进来） */
+.ea-getbtn{border:1px solid var(--ea-acc);background:transparent;color:var(--ea-acc);
+  font:inherit;font-size:12px;padding:0 9px;height:26px;cursor:pointer;white-space:nowrap}
+.ea-getbtn:hover{background:var(--ea-acc);color:var(--on-accent,#fff)}
+.ea-getbtn[disabled]{opacity:.5;cursor:default}
+
+/* 行内预览 */
+.ea-pvbtn{border:1px solid var(--ea-line);background:var(--ea-bg);color:var(--ea-soft);border-radius:8px;
+  padding:2px 7px;font-size:11px;cursor:pointer;flex:none;transition:all .15s}
+.ea-pvbtn:hover{color:var(--ea-acc);border-color:rgba(0,168,112,.45);background:rgba(0,168,112,.07)}
+.ea-pv{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:rgba(12,12,14,.55)}
+.ea-pv[hidden]{display:none}
+.ea-pv-box{background:var(--ea-bg);border:1px solid var(--ea-line);border-radius:16px;padding:12px 14px 10px;
+  max-width:min(680px,92vw);box-shadow:0 24px 60px -24px rgba(0,0,0,.6)}
+.ea-pv-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ea-pv-head b{font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ea-pv-head .ea-btn{padding:4px 9px;font-size:11.5px;border-radius:8px}
+.ea-pv-img{display:block;width:min(640px,84vw);height:auto;border-radius:10px;background:var(--ea-sheet2);
+  border:1px solid var(--ea-line)}
+.ea-pv-img:not([src]){min-height:120px}
+.ea-pv-foot{margin-top:8px;font-size:11.5px;color:var(--ea-dim);word-break:break-all}
 </style>`;
 
 const panel = {
@@ -233,9 +323,16 @@ const panel = {
     let packId = null;
     let query = '';
     let cat = 'all';
+    /** 折起来的分类（默认全展开）。只记用户点过的，搜索/筛选/切分类都保留。 */
+    const collapsed = new Set();
+    /** 「包里已装」那条要不要展开（默认收起，只显示前几段）。 */
+    let instOpen = false;
+    /** 默认只列库里真有的动作；勾上开关才把完整 105 条目录（含未下载）也列出来。 */
+    let showAll = false;
 
     /* ---------- 骨架 ---------- */
     wrap.innerHTML = `
+      <div class="ea-pin">
       <div class="ea-h">
         <div>
           <h2>深深与额外动作拓展</h2>
@@ -248,7 +345,7 @@ const panel = {
       </div>
       <div class="ea-guide">
         <b>四步就能用</b>
-        <span class="s"><i>1</i>选动作库<span class="d">没有完整库就点上面「自动寻找动作库…」，或把解压出来的「深深-动作库」选进来</span></span>
+        <span class="s"><i>1</i>选动作库<span class="d">没有完整库就点上面的「动作库」菜单 →「自动寻找动作库…」，或把解压出来的「深深-动作库」选进来</span></span>
         <span class="a">›</span>
         <span class="s"><i>2</i>勾动作<span class="d">勾中的才会写进形象包，没勾的桌宠不会做</span></span>
         <span class="a">›</span>
@@ -259,12 +356,23 @@ const panel = {
       <div class="ea-bar">
         <select class="ea-sel" data-role="pack"></select>
         <input class="ea-inp" data-role="q" placeholder="搜名字 / id…">
-        <button class="ea-btn" data-act="library" title="动作库可以放在任意盘，路径会被记住">选择动作库位置…</button>
-        <button class="ea-btn" data-act="starter-library" title="在你会选的目录下建一个自带示例动作库（3 段）并设为当前库">用自带示例建库…</button>
-        <button class="ea-btn" data-act="find-libs" title="自动扫一遍本机像动作库的目录，列出来点一下就用">自动寻找动作库…</button>
+        <label class="ea-chk" data-role="showall-wrap" title="默认只列动作库里真有的动作；勾上可以看完整的 105 条目录（未下载的勾了也写不进包）">
+          <input type="checkbox" data-role="showall"><span data-role="showall-txt">显示全部</span>
+        </label>
+        <details class="ea-menu" data-role="libmenu">
+          <summary class="ea-btn" title="动作库可以放在任意盘，路径会被记住">动作库</summary>
+          <div class="ea-menu-body">
+            <button type="button" data-act="library" title="手动指一个已有的动作库目录">选择动作库位置…</button>
+            <button type="button" data-act="find-libs" title="自动扫一遍本机像动作库的目录，列出来点一下就用">自动寻找动作库…</button>
+            <button type="button" data-act="starter-library" title="在你会选的目录下建一个自带示例动作库（3 段）并设为当前库">用自带示例建库…</button>
+            <div class="sep"></div>
+            <div class="hint" data-role="libhint">当前库见右下方状态行</div>
+          </div>
+        </details>
         <button class="ea-btn" data-act="restore-pack" title="建一个空的角色包（只有身体状态），位置自己选">建立空的角色包（选位置）</button>
         <span class="ea-lib" data-role="lib"></span>
       </div>
+      <div class="ea-pin">
       <div class="ea-note" data-role="note" hidden></div>
       <div class="ea-libs" data-role="libs" hidden></div>
       <div class="ea-installed" data-role="installed" hidden></div>
@@ -280,7 +388,7 @@ const panel = {
             <span data-role="addmsg"></span>
           </div>
           <div style="margin-top:6px">动作库是固定的那一个文件夹（路径见上面的状态行），不需要另外下载任何东西。
-            <br>想换位置：点「自动寻找动作库…」让它自己扫出来，或用「选择动作库…」手动指过去。</div>
+            <br>想换位置：点上面的「动作库」菜单（自动寻找 / 选择位置 / 用自带示例建库）。</div>
           <div style="margin-top:6px">可选：同目录放 <code>action.json</code> 指定 <code>{"id":"eat-burger","zh":"吃汉堡","category":"extra","fps":24}</code>；不给就按目录名自动生成、24 fps。</div>
         </div>
       </details>
@@ -291,6 +399,7 @@ const panel = {
           <div style="margin-top:8px">动作素材：MerZlin/dsh-pet-indesktop（assets-v1）· 形象包代码与封装：DSH-PET 工作区 · 插件：Cortico World（api 6）</div>
         </div>
       </details>
+      </div>
       <div class="ea-foot">
         <span class="sum" data-role="sum"></span>
         <span class="sp"></span>
@@ -301,6 +410,28 @@ const panel = {
           <button class="ea-btn dan" data-act="clear">清空随机动作列表</button>
           <button class="ea-btn pri" data-act="save">保存随机列表</button>
         </div>
+      </div>
+      <div class="ea-onboard" data-role="onboard" hidden>
+        <div class="ea-onboard-box">
+          <b>完整动作库还没下载</b>
+          <p>插件自带 <b data-role="onboard-have">若干</b> 段示例动作。完整库有 <b data-role="onboard-count">105</b> 段（640×360，约 <span data-role="onboard-size">370</span> MB），下载并指给插件之后，面板里的动作才能全部勾选。</p>
+          <p class="ea-dim" data-role="onboard-note">下载地址由维护者提供，拿到后这里会出现「去下载」按钮；也可以自己放好库，用「动作库」菜单里的「选择动作库位置…」指过去。</p>
+          <div class="ea-onboard-acts">
+            <button class="ea-btn pri" type="button" data-act="download-library" data-role="onboard-dl" hidden>一键下载并安装</button>
+            <a class="ea-btn" data-role="onboard-go" target="_blank" rel="noreferrer" hidden>手动下载</a>
+            <button class="ea-btn" type="button" data-act="onboard-dismiss">知道了</button>
+          </div>
+        </div>
+      </div>
+      <div class="ea-pv" data-role="pv" hidden>
+        <div class="ea-pv-box">
+          <div class="ea-pv-head">
+            <b data-role="pv-title">预览</b>
+            <button class="ea-btn" type="button" data-act="pv-close" title="关闭预览">关闭</button>
+          </div>
+          <img class="ea-pv-img" data-role="pv-img" alt="">
+          <div class="ea-pv-foot" data-role="pv-foot"></div>
+        </div>
       </div>`;
 
     /* 模板自检：少一个节点就当场炸，别留成静默 null */
@@ -308,7 +439,10 @@ const panel = {
       '[data-role=pack]', '[data-role=q]', '[data-role=lib]', '[data-role=note]', '[data-role=libs]',
       '[data-role=installed]', '[data-role=chips]', '[data-role=list]', '[data-role=sum]',
       '.ea-foot', '[data-act=save]', '[data-act=clear]', '[data-act=add]', '[data-act=prune]', '[data-act=library]',
+      '[data-role=libmenu]', '[data-role=showall]',
       '[data-act=restore-pack]', '[data-act=find-libs]', '[data-act=starter-library]',
+      '[data-role=onboard]', '[data-act=onboard-dismiss]',
+      '[data-role=pv]', '[data-role=pv-img]', '[data-role=pv-title]', '[data-role=pv-foot]', '[data-act=pv-close]',
     ];
     const missing = REQUIRED.filter((sel) => !wrap.querySelector(sel));
     if (missing.length) throw new Error('面板模板缺少节点：' + missing.join(', '));
@@ -324,6 +458,114 @@ const panel = {
     const sumEl = $('[data-role=sum]');
     const libEl = $('[data-role=lib]');
     const footEl = wrap.querySelector('.ea-foot');
+    const pinEl = wrap.querySelector('.ea-pin');
+    /** 底栏是浮在内容上的，给它实际高度在滚动区底部留出等量空白，最后一行才不会被压住。 */
+    const fitFoot = () => {
+      const h = Number(footEl?.offsetHeight) || 0;
+      if (pinEl) pinEl.style.paddingBottom = (h ? h + 12 : 72) + 'px';
+    };
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', fitFoot);
+    const onboardEl = $('[data-role=onboard]');
+    /** 本次打开面板只自动弹一次，点「知道了」之后靠 config.json 里的标记永久不再弹。 */
+    let onboardShown = false;
+    const pvEl = $('[data-role=pv]');
+    const pvImg = $('[data-role=pv-img]');
+    const pvTitle = $('[data-role=pv-title]');
+    const pvFoot = $('[data-role=pv-foot]');
+
+    /** 后台支不支持这些能力（老 world + 新面板时用来决定要不要显示按钮）。 */
+    function apiHas(name) {
+      const api = Array.isArray(state?.api) ? state.api : null;
+      return !api || api.includes(name);
+    }
+    /** 缺帧、且有触发词（状态段不下载）时，才给单段下载按钮。 */
+    function canGet(a) {
+      return !!a && !a.present && !!a.word && apiHas('download-action');
+    }
+
+    /** 把后台报错翻译成用户能照做的动作。 */
+    function explainErr(err) {
+      const raw = String(err?.message ?? err ?? '');
+      if (/unknown method/i.test(raw)) {
+        return '扩展刚更新过，但 Coopanion 还在用旧的后台。请完全退出 Coopanion 再打开，这个按钮就能用了。';
+      }
+      if (/内置形象包不给写/.test(raw)) return '这是内置形象包，不能写。先「建立空的角色包」再保存。';
+      return raw || '操作失败';
+    }
+
+    /** 一键：下载完整动作库并设为当前库。 */
+    async function doDownloadLibrary() {
+      if (!apiHas('download-library')) {
+        say(explainErr({ message: 'unknown method' }), true);
+        return;
+      }
+      busy(true);
+      say('正在下载完整动作库…（约 370 MB，视网速几分钟，别关这个页面）');
+      try {
+        const r = await ctx.invoke('download-library', []);
+        await loadAll();
+        say(`动作库已装好：${r.modules} 段 → ${r.path}`);
+      } catch (err) {
+        say('下载没成功：' + explainErr(err), true);
+      } finally {
+        busy(false);
+      }
+    }
+
+    /** 单段：从下载源只取这一段。 */
+    async function downloadOne(id, a) {
+      if (!id) return;
+      busy(true);
+      say(`正在下载「${a?.zh ?? id}」…`);
+      try {
+        await ctx.invoke('download-action', [id, a?.category ?? '']);
+        await loadAll();
+        say(`「${a?.zh ?? id}」已装进动作库`);
+      } catch (err) {
+        say('下载没成功：' + explainErr(err), true);
+      } finally {
+        busy(false);
+      }
+    }
+
+    /** 首次打开、且完整动作库还没下载时，弹一次「完整动作库还没下载」。 */
+    function maybeOnboard() {
+      if (!onboardEl || onboardShown) return;
+      const ob = state?.onboard;
+      const missing = catalog?.missing ?? 0;
+      if (!ob || ob.seen || missing <= 0) return;   // 看过 / 库是完整的 → 不弹
+      onboardShown = true;
+      const go = wrap.querySelector("[data-role=onboard-go]");
+      const note = wrap.querySelector("[data-role=onboard-note]");
+      const dl = wrap.querySelector('[data-role=onboard-dl]');
+      const canOne = apiHas('download-library');
+      if (dl) dl.hidden = !canOne;
+      if (go) {
+        if (ob.downloadUrl && !canOne) { go.href = ob.downloadUrl; go.hidden = false; }
+        else if (ob.downloadUrl && canOne) { go.href = ob.downloadUrl; go.hidden = false; }
+        else go.hidden = true;
+      }
+      if (note) note.hidden = !!ob.downloadUrl;
+      // 数字都从清单算，别写死（换库、加动作时不用改文案）
+      const totalSeg = catalog?.count ?? 0;
+      const haveSeg = catalog?.present ?? 0;
+      const totalBytes = (catalog?.actions ?? []).reduce((sum, a) => sum + (a.bytes || 0), 0);
+      const setTxt = (sel, v) => { const node = wrap.querySelector(sel); if (node) node.textContent = String(v); };
+      if (totalSeg) setTxt('[data-role=onboard-count]', totalSeg);
+      setTxt('[data-role=onboard-have]', haveSeg);
+      if (totalBytes) setTxt('[data-role=onboard-size]', Math.round(totalBytes / 1048576));
+      onboardEl.hidden = false;
+    }
+
+    /** 开关文案：默认状态写清"还藏着 N 段没下载"，没有隐藏项时整个开关隐藏。 */
+    function renderShowAll() {
+      const wrapEl = wrap.querySelector("[data-role=showall-wrap]");
+      const txtEl = wrap.querySelector("[data-role=showall-txt]");
+      const hidden = (catalog?.actions ?? []).filter((a) => a.present === false).length;
+      if (wrapEl) wrapEl.hidden = hidden === 0;
+      if (showAllInp) showAllInp.checked = showAll;
+      if (txtEl) txtEl.textContent = showAll ? `看全部（含未下载 ${hidden} 段）` : `显示全部 ${hidden} 段未下载的`;
+    }
 
     const pack = () => state?.figures?.find((f) => f.id === packId) ?? null;
     const wordCount = () => (catalog?.actions ?? []).filter((a) => a.word).length;
@@ -331,6 +573,98 @@ const panel = {
       const set = new Set(ids);
       return (catalog?.actions ?? []).filter((a) => set.has(a.id)).reduce((n, a) => n + (a.bytes || 0), 0);
     };
+
+    /* ---------- 行能不能勾 ---------- */
+    /** 身体状态（待机/走路这种）和库里还没有的，都不能勾 —— 行里也是 disabled，两边必须同一套判断。 */
+    const isSelectable = (a) => !!a.word
+      && a.present !== false
+      && !(Array.isArray(a.roles) && a.roles.length > 0);
+    /** 一组里可勾的那些。全选只认这个数组、不认 DOM，所以折叠起来也不会漏。 */
+    const selectableOf = (rows) => rows.filter(isSelectable);
+
+    /* ---------- 缩略图懒加载 ---------- */
+    /**
+     * 行先渲染出来（尺寸由 CSS 的 64×36 定住，不挂 src 也不会跳动），
+     * 只有真的进可视区（上下再放宽 200px）才把 data URL 挂到 src 上。
+     * 环境里没有 IntersectionObserver 就直接全挂 —— 功能优先，不抛错。
+     *
+     * 全表共用**一个** observer：折叠区是 10 个网格，每个网格各建一个的话
+     * 后建的会把前一个 disconnect 掉，前面几个网格的缩略图就永远不加载了。
+     * 整体重绘前统一 disconnect（见 renderList 开头）。
+     */
+    let thumbIO = null;
+    /** 把某一行的 data-src 挂到 src 上（挂过就把 data-src 删掉，重复 observe 也不会重复赋值）。 */
+    const flushThumb = (im) => {
+      const src = im?.dataset?.src;
+      if (!src) return;
+      im.src = src;
+      delete im.dataset.src;
+    };
+    const ensureThumbIO = () => {
+      if (thumbIO || typeof IntersectionObserver !== 'function') return thumbIO;
+      try {
+        thumbIO = new IntersectionObserver((entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            flushThumb(e.target);
+            thumbIO?.unobserve?.(e.target);
+          }
+        }, { root: null, rootMargin: '200px' });
+      } catch {
+        thumbIO = null;
+      }
+      return thumbIO;
+    };
+    const mountThumbs = (scope) => {
+      if (!scope || typeof scope.querySelectorAll !== 'function') return;
+      const imgs = [...scope.querySelectorAll('img[data-role=thumb]')].filter((im) => im?.dataset?.src);
+      if (!imgs.length) return;
+      const io = ensureThumbIO();
+      if (!io) { for (const im of imgs) flushThumb(im); return; }   // 退化：直接全挂
+      for (const im of imgs) io.observe(im);
+    };
+
+    /* ---------- 分类折叠 ---------- */
+    /** 只切 DOM 上的这一组，不整表重绘：折叠一下不该把 105 行的缩略图重新走一遍懒加载。 */
+    const toggleCat = (sec, cid) => {
+      const nowCollapsed = !collapsed.has(cid);
+      if (nowCollapsed) collapsed.add(cid); else collapsed.delete(cid);
+      if (sec) {
+        sec.classList.toggle('collapsed', nowCollapsed);
+        const grid = sec.nextElementSibling;
+        if (grid) grid.hidden = nowCollapsed;
+      }
+    };
+
+    /* ---------- 行内预览 ---------- */
+    let pvSeq = 0;
+    const closePreview = () => {
+      pvSeq++;
+      if (pvEl) pvEl.hidden = true;
+      if (pvImg) pvImg.removeAttribute?.('src');
+    };
+    const openPreview = async (a) => {
+      if (!pvEl || !a) return;
+      const seq = ++pvSeq;
+      pvEl.hidden = false;
+      if (pvTitle) pvTitle.textContent = `${a.zh} · ${a.seconds.toFixed(1)}s`;
+      if (pvImg) pvImg.removeAttribute?.('src');
+      if (pvFoot) pvFoot.textContent = '正在读取高清动图…';
+      try {
+        const r = await ctx.invoke('preview', [a.id]);
+        if (seq !== pvSeq) return;                    // 期间又点了别的/已经关掉
+        if (pvImg && r?.dataUrl) pvImg.src = r.dataUrl;
+        if (pvFoot) {
+          pvFoot.textContent = `${mb(r?.bytes ?? 0)} · ${a.dir || a.clip || ''}` + (r?.cached ? ' · 已缓存' : '');
+        }
+      } catch (err) {
+        if (seq !== pvSeq) return;
+        if (pvFoot) pvFoot.textContent = '预览不了：' + String(err?.message ?? err);
+      }
+    };
+    if (pvEl) {
+      pvEl.onclick = (e) => { if (e.target === pvEl) closePreview(); };   // 点浮层外的暗底就关掉
+    }
 
     function renderPack() {
       const list = (state?.figures ?? []).filter((f) => f.supported && !f.builtin);
@@ -354,16 +688,21 @@ const panel = {
     function renderChips() {
       const byCat = new Map();
       for (const a of catalog?.actions ?? []) {
+        if (!showAll && a.present === false) continue;   // 默认不统计库里没有的
         if (!byCat.has(a.category)) byCat.set(a.category, { id: a.category, zh: a.catZh || a.category, count: 0 });
         byCat.get(a.category).count++;
       }
       const cats = [...byCat.values()];
-      const total = { id: 'all', zh: '全部', count: (catalog?.actions ?? []).length };
+      const total = { id: 'all', zh: '全部', count: (catalog?.actions ?? []).filter((a) => showAll || a.present !== false).length };
       chipsEl.innerHTML = '';
       for (const c of [total, ...cats]) {
         const b = el('button', 'ea-chip' + (cat === c.id ? ' on' : ''), `${esc(c.zh)} <span style="opacity:.7">${c.count}</span>`);
         b.type = 'button';
-        b.onclick = () => { cat = c.id; renderChips(); renderList(); };
+        b.onclick = () => {
+          cat = c.id;
+          collapsed.clear();          // 切分类/看全部时一律展开：否则点进去可能是几个折叠的表头，看着像空的
+          renderChips(); renderList();
+        };
         chipsEl.appendChild(b);
       }
     }
@@ -376,8 +715,11 @@ const panel = {
       const row = el('div', 'ea-row' + (on ? ' on' : '') + (isState || off ? ' off' : '') + (off ? ' miss' : ''));
       // 目录固定：悬停就能看到这段动作在库里的固定位置 actions/<分类>/<id>
       row.title = '固定目录：' + (a.dir || a.clip || `actions/${a.category}/${a.id}`) + (off ? '（库里还没有，补进来才能用）' : '');
+      // 缩略图的 data URL 先不挂 src：等这一行进可视区再挂（见 mountThumbs）。
+      // 尺寸由 CSS 的 64×36 定住，所以不挂 src 也不会让行跳动。
+      row.__pickable = isSelectable(a) ? a : null;   // 表头复选框要用：这一行到底算不算"可勾"
       row.innerHTML = `
-        ${a.thumb ? `<img src="${esc(a.thumb)}" alt="" loading="lazy">` : `<span class="ea-ph">${esc((a.zh || "?").slice(0, 1))}</span>`}
+        ${a.thumb ? '<img data-role="thumb" alt="" width="64" height="36" loading="lazy" decoding="async">' : `<span class="ea-ph">${esc((a.zh || "?").slice(0, 1))}</span>`}
         <div class="t">
           <b>${esc(a.zh)}</b>
           <code>${esc(a.id)}</code>
@@ -391,32 +733,81 @@ const panel = {
             ${a.random ? '' : '<span class="tag">不轮播</span>'}
           </div>
         </div>
+        ${off ? '' : `<button class="ea-pvbtn" type="button" data-pv="${esc(a.id)}" title="先看一眼这一段">预览</button>${canGet(a) ? `<button class="ea-getbtn" type="button" data-get="${esc(a.id)}" title="从下载源补这一段（不跳转，直接装进动作库）">↓ 下载</button>` : ''}`}
         ${mounted ? '<button class="ea-x" type="button" title="从包里删掉这一段" aria-label="删除">×</button>' : ''}
-        ${off && state?.download?.perAction && a.word ? '<button class="ea-x get" type="button" data-act="get-action" data-id="' + esc(a.id) + '" title="从下载源补这一段（不跳转，直接装进动作库）" aria-label="下载">↓</button>' : ''}
         <input type="checkbox" ${on ? 'checked' : ''} ${isState || off ? 'disabled' : ''}>`;
-      if (!isState && !off) {
+      const thumb = row.querySelector('img[data-role=thumb]');
+      if (thumb) thumb.dataset.src = a.thumb;       // 真源先藏起来，由 mountThumbs 按需挂
+      row.onclick = (e) => {
+        if (e.target.closest('[data-pv]')) { openPreview(a); return; }   // 预览按钮自己处理
+        const getBtn = e.target.closest('[data-get]');
+        if (getBtn) { downloadOne(getBtn.dataset.get, a); return; }     // 单段下载自己处理
+        if (e.target.closest('.ea-x')) return;                          // × 交给它自己的处理
+        if (isState || off) return;                                     // 状态行 / 缺帧行：只有预览可点
         const box = row.querySelector('input');
-        row.onclick = (e) => {
-          if (e.target.closest('.ea-x')) return;      // × 交给它自己的处理
-          if (e.target !== box) box.checked = !box.checked;
-          if (box.checked) selected.add(a.id); else selected.delete(a.id);
-          row.classList.toggle('on', box.checked);
-          renderSum();
-        };
-      }
+        if (e.target !== box) box.checked = !box.checked;
+        if (box.checked) selected.add(a.id); else selected.delete(a.id);
+        row.classList.toggle('on', box.checked);
+        renderSum();
+        syncCatBox(row);                              // 顺手把这一类的表头复选框对齐
+      };
       return row;
     }
 
-    /** 已装的一段一段列出来，每段带一个 × —— 这就是"删除单个动作拓展"。 */
+    /** 勾选变化后同步该行所在分类的表头复选框（含 indeterminate），避免"勾了但不显示半选"。 */
+    function syncCatBox(row) {
+      const grid = row?.parentElement;
+      const sec = grid?.previousElementSibling;
+      if (!grid || !sec) return;
+      const box = sec.querySelector?.('input');
+      if (!box) return;
+      const cid = sec.dataset?.cat;
+      const rows = [...grid.querySelectorAll('.ea-row')];
+      if (!rows.length || !cid) return;
+      const pickable = rows.map((r) => r.__pickable).filter(Boolean);
+      const picked = pickable.filter((a) => selected.has(a.id)).length;
+      const allOn = pickable.length > 0 && picked === pickable.length;
+      box.checked = allOn;
+      box.indeterminate = picked > 0 && !allOn;
+      const n = sec.querySelector('.n');
+      if (n) n.textContent = `${picked}/${pickable.length} 已选 · 共 ${rows.length}`;
+    }
+
+    /**
+     * 已装的一段一段列出来，每段带一个 × —— 这就是"删除单个动作拓展"。
+     * 段数多的时候（勾满一百多段的场景）默认只显示前 3 段，其余收进一行「展开全部」，
+     * 免得这一条把下面的动作列表顶下去；展开状态在这个面板里记住。
+     */
+    const INST_COLLAPSE_AT = 8;   // 超过这么多段才折叠
+    const INST_SHOW_COLLAPSED = 3; // 收起时显示前几段
     function renderInstalled() {
       const ids = [...installed];
       installedEl.hidden = ids.length === 0;
       if (!ids.length) { installedEl.innerHTML = ''; return; }
+      const folded = !instOpen && ids.length > INST_COLLAPSE_AT;
+      const shown = folded ? ids.slice(0, INST_SHOW_COLLAPSED) : ids;
       installedEl.innerHTML = `<span class="lab">包里已装 ${ids.length} 段：</span>`;
-      for (const id of ids) {
+      for (const id of shown) {
         const a = catalog?.actions.find((x) => x.id === id);
         const pill = el('span', 'ea-pill', `${esc(a?.zh ?? id)}<button type="button" data-act="remove" data-id="${esc(id)}" title="删掉这一段">×</button>`);
         installedEl.appendChild(pill);
+      }
+      if (folded) {
+        const more = el('span', 'more', `…还有 ${ids.length - INST_SHOW_COLLAPSED} 段`);
+        installedEl.appendChild(more);
+        const b = el('button', 'inst-toggle', `展开全部 ${ids.length} 段 ▾`);
+        b.type = 'button';
+        b.dataset.inst = 'toggle';
+        b.title = '展开看全部已装动作；每段后面的 × 可以单独删掉';
+        b.onclick = (ev) => { ev?.stopPropagation?.(); instOpen = true; renderInstalled(); };
+        installedEl.appendChild(b);
+      } else if (ids.length > INST_COLLAPSE_AT) {
+        const b = el('button', 'inst-toggle', '收起 ▴');
+        b.type = 'button';
+        b.dataset.inst = 'toggle';
+        b.title = '收起，只显示前几段';
+        b.onclick = (ev) => { ev?.stopPropagation?.(); instOpen = false; renderInstalled(); };
+        installedEl.appendChild(b);
       }
       const hint = el('span', 'lab', '（× 直接删掉这一段；要改就重新勾选后保存）');
       installedEl.appendChild(hint);
@@ -424,6 +815,7 @@ const panel = {
 
     function renderList() {
       const acts = (catalog?.actions ?? []).filter((a) => {
+        if (!showAll && a.present === false) return false;   // 默认不列库里没有的
         if (cat !== 'all' && a.category !== cat) return false;
         if (!query) return true;
         const q = query.toLowerCase();
@@ -431,7 +823,13 @@ const panel = {
       });
       listEl.innerHTML = '';
       if (!acts.length) {
-        listEl.appendChild(el('div', 'ea-note', '没有匹配的动作。'));
+        const hidden = (catalog?.actions ?? []).filter((a) => a.present === false).length;
+        const msg = (query || cat !== 'all')
+          ? '没有匹配的动作。'
+          : (hidden
+            ? `动作库里现在还没有动作（清单里还有 ${hidden} 段没下载）。到「动作库」菜单补齐，或勾上「显示全部」先看完整目录。`
+            : '动作库里现在还没有动作，到「动作库」菜单补齐。');
+        listEl.appendChild(el('div', 'ea-note', msg));
         return;
       }
       const groups = new Map();
@@ -439,28 +837,48 @@ const panel = {
         if (!groups.has(a.category)) groups.set(a.category, []);
         groups.get(a.category).push(a);
       }
+      // 整表要重建了：先把上一轮的观察目标全放掉，再按新的行重新观察（observer 复用同一个）
+      thumbIO?.disconnect?.();
       for (const [cid, rows] of groups) {
-        const sec = el('div', 'ea-sec');
-        const picked = rows.filter((a) => selected.has(a.id)).length;
-        sec.innerHTML = `<h3>${esc(rows[0].catZh)}</h3>
-          <span class="n">${picked}/${rows.filter((a) => a.word).length} 已选</span><span class="sp"></span>`;
-        const all = el('button', 'ea-btn', '选这一类');
-        all.type = 'button';
-        all.onclick = () => {
-          for (const a of rows) if (a.word) selected.add(a.id);
-          renderList(); renderSum();
+        /* 表头：整行可点 = 折叠/展开；行首复选框 = 这一类全选/全不选。
+           全选的范围是 **这一组在当前筛选下的 rows**（不是 DOM 里能看见的那些），
+           所以折叠起来以后点全选也不会漏；库里没有的（present:false）和身体状态
+           本来就不是"可勾"的（isSelectable），全选也不会去动它们。 */
+        const pickable = selectableOf(rows);
+        const picked = pickable.filter((a) => selected.has(a.id)).length;
+        const allOn = pickable.length > 0 && picked === pickable.length;
+        const folded = collapsed.has(cid);
+        const sec = el('div', 'ea-sec' + (folded ? ' collapsed' : ''));
+        sec.dataset.cat = cid;
+        sec.title = folded ? '点一下展开这一类' : '点一下折起这一类';
+        sec.innerHTML = `<span class="caret" aria-hidden="true">›</span>
+          <input type="checkbox"${allOn ? ' checked' : ''}${pickable.length ? '' : ' disabled'}
+            aria-label="全选 ${esc(rows[0].catZh)}" title="选中这一类里库里有的全部动作（${pickable.length} 段）">
+          <h3>${esc(rows[0].catZh)}</h3>
+          <span class="n">${picked}/${pickable.length} 已选 · 共 ${rows.length}</span><span class="sp"></span>`;
+        const box = sec.querySelector('input');
+        if (box) {
+          box.indeterminate = picked > 0 && !allOn;
+          box.onclick = (e) => {
+            e.stopPropagation();                       // 别顺带把这一类折起来
+            const wantAll = !(pickable.every((a) => selected.has(a.id)));
+            for (const a of pickable) {
+              if (wantAll) selected.add(a.id); else selected.delete(a.id);
+            }
+            renderList(); renderSum();
+          };
+        }
+        sec.onclick = (e) => {
+          if (e.target.closest('input')) return;       // 复选框走自己的 onclick
+          toggleCat(sec, cid);
+          sec.title = collapsed.has(cid) ? '点一下展开这一类' : '点一下折起这一类';
         };
-        const none = el('button', 'ea-btn', '清这一类');
-        none.type = 'button';
-        none.onclick = () => {
-          for (const a of rows) selected.delete(a.id);
-          renderList(); renderSum();
-        };
-        sec.append(all, none);
         listEl.appendChild(sec);
         const grid = el('div', 'ea-list');
+        grid.hidden = folded;
         for (const a of rows) grid.appendChild(rowOf(a));
         listEl.appendChild(grid);
+        mountThumbs(grid);                             // 只给真进可视区的行挂缩略图
       }
     }
 
@@ -475,8 +893,13 @@ const panel = {
       const total = catalog?.count ?? 0;
       const have = catalog?.present ?? total;
       const miss = catalog?.missing ?? 0;
+      /** 勾选里有多少段是库里没有的（保存时会被跳过，让用户先知道） */
+      const dead = catalog ? [...selected].filter((id) => catalog.actions.some((a) => a.id === id && a.present === false)).length : 0;
+      const hiddenAll = (catalog?.actions ?? []).filter((a) => a.present === false).length;
       sumEl.innerHTML = `已勾选 <b>${n}</b> 段 · 约 <b>${mb(bytesOf(selected))}</b>`
+        + (hiddenAll && !showAll ? `　|　<b class="warn">另有 ${hiddenAll} 段未下载</b>（勾上「显示全部」可看）` : '')
         + `　|　清单 <b>${total}</b> 条：库里 <b>${have}</b>${miss ? ` · <b class="warn">缺 ${miss}</b>` : ''}`
+        + (dead ? `　|　<b class="warn">其中 ${dead} 段库里没有</b>（保存时跳过）` : '')
         + (extra ? `　|　包里已有 ${extra} 段（${mb(p.extra.bytes || 0)}）` : '');
     }
 
@@ -502,15 +925,22 @@ const panel = {
       noteEl.hidden = true;
       noteEl.className = 'ea-note';
       if (!state) return;
+      const haveSeg = state.library.present ?? state.library.count;
+      const missSeg = state.library.missing ?? Math.max(0, (state.library.count ?? 0) - haveSeg);
+      /** 库不完整时把缺的几段点名列出来（最多 6 个），并给出去哪补。 */
+      const missLine = () => {
+        if (!missSeg) return '';
+        const names = (catalog?.actions ?? []).filter((a) => a.present === false).slice(0, 6).map((a) => a.zh || a.id);
+        const more = names.length && missSeg > names.length ? '…' : '';
+        return `<br>库里还缺 <b class="warn">${missSeg}</b> 段${names.length ? `（${esc(names.join('、'))}${more}）` : ''}`
+          + ' —— 这些勾了也写不进包；点上面的「动作库」菜单去补，或到 '
+          + ' 到「动作库」菜单下载完整库。';
+      };
       if (!state.library.ok) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
-        const smallLib = state.library.ok && (state.library.present ?? state.library.count) < 20
-        ? `<b>当前动作库只有 ${state.library.present ?? state.library.count} 段</b>（插件自带的示例）。想要全部 105 段：
-            <button class="ea-btn pri" type="button" data-act="download-library" style="margin-left:6px">一键下载并安装</button>
-            <span class="ea-dim">（插件自己下、自己解压，不用你选文件夹）</span><br>`
-        : '';
-      noteEl.innerHTML = smallLib + `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点「自动寻找动作库…」让它自己找，或用「选择动作库…」指到那个文件夹。`;
+        noteEl.innerHTML = `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点上面的「动作库」菜单：自动寻找，或手动选位置。`
+          + `<br>清单里的 ${state.library.count ?? 105} 段现在都算「库里没有」。`;
         return;
       }
       if (!p) {
@@ -534,6 +964,7 @@ const panel = {
           + `<br><span class="ea-dim">勾选保存后，去 Coopanion 的<b>装扮页</b>重新点一下这个形象，它才会加载新的动作表。</span><br>`
         : '')
         + `写入 <code>${esc(p.dir)}\\额外动作拓展\\</code>　·　动作库 <code>${esc(state.library.dir)}</code>（${state.library.count} 段）`
+        + missLine()
         + `<br>保存会把 <code>figure.json</code> 的动作词裁成你勾的这些（表情不动），原文备份在 <code>figure.json.bak-额外动作拓展</code>；「清空随机动作列表」可完整还原。`;
     }
 
@@ -564,12 +995,20 @@ const panel = {
         ? `${haveSeg} / ${state.library.count} 段可用　${state.library.dir}`
           + (state.library.imported ? `（自定义 ${state.library.imported}）` : '')
         : '动作库未设置（可放在任意盘）';
-      renderPack(); renderChips(); renderList(); renderInstalled(); renderSum(); renderNote();
+      const libHint = wrap.querySelector('[data-role=libhint]');
+      if (libHint) {
+        libHint.textContent = state.library.ok
+          ? `当前库 ${haveSeg}/${state.library.count} 段：${state.library.dir}`
+          : '当前还没设置动作库 —— 选「自动寻找动作库…」或「选择动作库位置…」';
+      }
+      maybeOnboard();
+      renderPack(); renderShowAll(); renderChips(); renderList(); renderInstalled(); renderSum(); renderNote(); fitFoot();
     }
 
     function loadSelectionFor(id) {
       const p = state?.figures?.find((f) => f.id === id);
       installed = new Set(p?.extra?.ids ?? []);
+      instOpen = false;   // 换包时回到收起状态，别把上一个包的展开状态带过来
       selected = new Set([...installed].filter((x) => catalog.actions.some((a) => a.id === x && a.word && a.present !== false)).slice(0, MAX_SELECTED));
     }
 
@@ -580,28 +1019,33 @@ const panel = {
       renderList(); renderInstalled(); renderSum(); renderNote();
     };
     qInp.oninput = () => { query = qInp.value.trim(); renderList(); };
-
-    async function doDownloadLibrary() {
-      busy(true);
-      say('正在下载完整动作库…（约 370 MB，视网速几分钟，别关这个页面）');
-      try {
-        const r = await ctx.invoke('download-library', []);
-        say(`动作库已装好：${r.modules} 段 → ${r.path}`);
-        await loadAll();
-      } catch (err) {
-        say('下载没成功：' + String(err?.message ?? err), true);
-      } finally {
-        busy(false);
-      }
+    const showAllInp = $('[data-role=showall]');
+    if (showAllInp) {
+      showAllInp.checked = showAll;
+      showAllInp.onchange = () => {
+        showAll = !!showAllInp.checked;
+        renderShowAll(); renderChips(); renderList(); renderSum(); renderNote();
+      };
     }
 
     wrap.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-act]');
       if (!btn) return;
       const act = btn.dataset.act;
+      // 「动作库 ▾」里点完就收起来，别让菜单挂在打开对话框后面
+      const libMenu = wrap.querySelector('[data-role=libmenu]');
+      if (libMenu && (act === 'library' || act === 'find-libs' || act === 'starter-library')) libMenu.open = false;
       const busy = (on) => { for (const b of wrap.querySelectorAll('button')) b.disabled = on; };
       try {
-        if (act === 'all') {
+        if (act === 'onboard-dismiss') {
+          onboardEl.hidden = true;
+          try { await ctx.invoke('dismiss-onboard', []); } catch { /* 老版本 world 没有这个方法，忽略 */ }
+        } else if (act === 'download-library') {
+          await doDownloadLibrary();
+          if (onboardEl) onboardEl.hidden = true;
+        } else if (act === 'pv-close') {
+          closePreview();
+        } else if (act === 'all') {
           for (const a of catalog.actions) if (a.word) selected.add(a.id);
           renderList(); renderSum();
         } else if (act === 'none') {
@@ -624,7 +1068,14 @@ const panel = {
           state = await ctx.invoke('state');
           const p = state.figures?.find((f) => f.id === packId);
           selected = new Set(r.copied.concat(r.skipped).filter((id) => catalog.actions.some((a) => a.id === id && a.present !== false)));
-          say(`已写入 ${r.count} 段，${mb(r.bytes)}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}；去装扮页重新点一下这个形象才会生效`);
+          {
+            const skipped = Array.isArray(r.skipped) ? r.skipped : [];
+            const names = skipped.slice(0, 5).map((id) => catalog.actions.find((a) => a.id === id)?.zh ?? id);
+            const tail = skipped.length
+              ? `；库里没有的 ${skipped.length} 段已跳过${names.length ? `（${names.join('、')}${skipped.length > names.length ? '…' : ''}）` : ''}`
+              : '';
+            say(`已写入 ${r.count} 段，${mb(r.bytes)}${tail}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}；去装扮页重新点一下这个形象才会生效`, !!skipped.length);
+          }
           libEl.textContent = state.library.ok ? `${state.library.present ?? state.library.count} / ${state.library.count} 段可用` : '动作库未设置（可放在任意盘）';
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
           if (p) p.extra = { ids: [...selected], count: r.count, bytes: r.bytes, updatedAt: r.updatedAt };
@@ -688,7 +1139,7 @@ const panel = {
           renderLibraries(r.libraries || []);
           say(r.count
             ? `找到 ${r.count} 个候选，点一个就用它`
-            : '没找到像动作库的目录 —— 用「选择动作库…」手动指，或用「添加更多动作…」先建一个', !r.count);
+            : '没找到像动作库的目录 —— 用「动作库」菜单里的「选择动作库位置…」手动指，或用「添加更多动作…」先建一个', !r.count);
         } else if (act === 'starter-library') {
           let parent = null;
           try {
@@ -726,18 +1177,6 @@ const panel = {
               ? r.added.map((x) => `${x.zh}（${x.frames} 帧 / ${x.seconds}s）`).join('、')
               : (r.skipped.map((x) => `${x.dir}：${x.reason}`).join('；') || '');
           }
-        } else if (act === 'download-library') {
-          await doDownloadLibrary();
-        } else if (act === 'get-action') {
-          const id = btn.dataset.id;
-          if (!id) return;
-          const item = catalog?.actions?.find((a) => a.id === id);
-          busy(true); say(`正在下载「${item?.zh ?? id}」…`);
-          try {
-            await ctx.invoke('download-action', [id, item?.category ?? '']);
-            await loadAll();
-            say(`「${item?.zh ?? id}」已装进动作库`);
-          } finally { busy(false); }
         } else if (act === 'library') {
           // 协议里 PathPickerOptions.kind 只有 'file' | 'directory'
           const dir = await ctx.pickPath({ kind: 'directory', title: '选择动作库目录（里面要有 actions/）' });
@@ -754,39 +1193,8 @@ const panel = {
       }
     });
 
-    /* 首次进入（库里只有自带示例）时问一次：要不要一键装完整动作库 */
-    let askedDownload = false;
-    function maybeAskDownload() {
-      if (askedDownload || !state) return;
-      const have = state.library?.present ?? state.library?.count ?? 0;
-      const total = state.library?.count ?? 0;
-      if (!state.library?.ok || have >= 20 || !state.download?.libraryUrl) return;
-      askedDownload = true;
-      const box = el('div', 'ea-modal');
-      box.innerHTML = `
-        <div class="card">
-          <h3>要装完整动作库吗？</h3>
-          <p>现在只有插件自带的 ${have} 段示例（目录一共 ${total} 段）。
-             完整的 105 段可以直接让插件下载并装好 —— <b>不用解压、不用选文件夹</b>，装完列表立刻能用。</p>
-          <div class="row">
-            <button class="ea-btn pri" type="button" data-act="download-library">现在就下载</button>
-            <button class="ea-btn" type="button" data-act="close">稍后</button>
-          </div>
-          <div class="tip">下载量约 370 MB，视网速几分钟；装到 Coopanion 数据目录里的 shenshen-library。</div>
-        </div>`;
-      box.addEventListener('click', async (e) => {
-        const btn = e.target.closest('[data-act]');
-        if (!btn) return;
-        const act = btn.dataset.act;
-        if (act === 'close') { box.remove(); return; }
-        if (act === 'download-library') { await doDownloadLibrary(); box.remove(); }
-      });
-      wrap.appendChild(box);
-    }
-
     try {
       await loadAll();
-      maybeAskDownload();
     } catch (err) {
       wrap.innerHTML = `<div class="ea-note bad">加载失败：${esc(err?.message ?? err)}</div>`;
     }

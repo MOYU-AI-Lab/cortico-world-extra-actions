@@ -131,9 +131,10 @@ export function packLooksSupported(packDir) {
   const st = lstatSync(entry, { throwIfNoEntry: false });
   if (!st || !st.isFile() || st.size > 2 * 1024 * 1024) return false;
   const js = readText(entry) ?? '';
-  // 只认真正会去读这个文件夹的播放器：动作库那个（actions/index.js + 额外动作拓展/index.js）。
-  // 早先那个只认 ext/clips.js 的补丁不认，别的角色（horo、clawd…）也不认。
-  return /额外动作拓展|actions\/index\.js|actions\/index['"]/.test(js);
+  // 只认入口里真的写着「额外动作拓展」的播放器 —— 那是唯一会去读我们写的文件夹的约定。
+  // 不能按 `actions/index.js` 放行：别的作者按帧序列做的形象包也有这个入口，
+  // 写进去会连带改它的 figure.json 词表，把它自己的动作词洗掉（扩展市场 Issue #3）。
+  return js.includes(EXTRA_DIR);
 }
 
 /** 当前这个包里已经装了哪些额外动作。 */
@@ -202,7 +203,22 @@ function applyVocab(packDir, actions, managed) {
   const base = (clean && Array.isArray(managed.baseVocab)) ? managed.baseVocab : current;
 
   const wanted = new Set(actions.map((a) => a.word).filter(Boolean));
-  const kept = base.filter((w) => w?.kind !== 'motion' || wanted.has(w?.id));
+  // 判据不是「谁加的」，而是「这段动作还在不在包里」：
+  //   - 勾了的：留；
+  //   - 没勾但包里还有这段模块（身体状态、别人自带动作）：也留 —— 不能替人删词；
+  //   - 没勾且模块已经删掉：这才回收，免得 bot 点名一个不存在的动作。
+  const hasModule = (id) => {
+    if (!id) return false;
+    for (const base of [join(packDir, EXTRA_DIR), join(packDir, 'actions')]) {
+      try {
+        for (const cat of readdirSync(base, { withFileTypes: true })) {
+          if (cat.isDirectory() && existsSync(join(base, cat.name, String(id), 'action.json'))) return true;
+        }
+      } catch { /* 目录不存在就算了 */ }
+    }
+    return false;
+  };
+  const kept = base.filter((w) => w?.kind !== 'motion' || wanted.has(w?.id) || hasModule(w?.id));
   const have = new Set(kept.map((w) => w?.id));
   const added = [];
   for (const a of actions) {

@@ -8,7 +8,7 @@
  * 面板（dist/webui.js）只做界面，所有落盘都在 writer.js 里，所以"面板保存"和"命令行保存"结果一致。
  * 这个文件不直接碰文件内容，只做发现、校验和转发。
  */
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
@@ -16,6 +16,21 @@ import { addModules, rebuildIndex, scanLibrary } from './importer.js';
 import { ensureStarter, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
 import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, libraryUrl } from './online.js';
 import { petFigures, petState } from './pet.js';
+
+/** 行内预览：只读库里这一段 anim.webp，转 data URL 交给面板。上限见 PREVIEW_MAX_BYTES。 */
+const PREVIEW_MAX_BYTES = 12 * 1024 * 1024;
+/** 同一段反复点不该反复读盘：按「id#大小」留最近几条。 */
+const PREVIEW_CACHE = new Map();
+const PREVIEW_CACHE_MAX = 3;
+/** 完整动作库的下载页（面板「去下载」按钮用；没有更好来源时的兜底）。 */
+const LIBRARY_PAGE = 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/tag/library';
+
+/** 面板能调的方法清单 —— 写进 state.api，让面板发现自己和后台不是同一版本。 */
+const METHODS = [
+  'state', 'catalog', 'dirs', 'save', 'remove', 'clear', 'prune', 'add',
+  'reindex', 'find-libraries', 'set-library', 'use-starter-library', 'restore-pack',
+  'download-library', 'download-action', 'preview', 'dismiss-onboard', 'reload',
+];
 
 const ID = 'extra-actions';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -157,6 +172,8 @@ export class ExtraActionsWorld {
     return {
       libraryDir: pick(fromCfg.libraryDir) || pick(file.libraryDir) || pick(this.bundle.library),
       figuresDir: pick(fromCfg.figuresDir) || pick(file.figuresDir),
+      onboardSeen: fromCfg.onboardSeen === true || file.onboardSeen === true,
+      downloadUrl: pick(fromCfg.downloadUrl) || pick(file.downloadUrl) || LIBRARY_PAGE,
     };
   }
 
@@ -370,6 +387,16 @@ export class ExtraActionsWorld {
         return this.downloadLibrary();
       case 'download-action':
         return this.downloadAction(String(a[0] ?? ''), String(a[1] ?? ''));
+      // 老版本面板会调 reload：当成「重新读一遍状态」，避免 unknown method 弹错
+      case 'reload':
+        return this.state();
+      // 面板「预览」：只读库里这一段，转 data URL
+      case 'preview':
+        return this.preview(String(a[0] ?? '').trim());
+      // 首启提示点过「知道了」：记下来，以后不再弹
+      case 'dismiss-onboard':
+        this.saveSettings({ onboardSeen: true });
+        return { ok: true, onboard: { seen: true, downloadUrl: this.settings().downloadUrl } };
       default:
         throw new Error(`unknown method: ${method}`);
     }
@@ -390,6 +417,9 @@ export class ExtraActionsWorld {
     const figs = await this.figures();
     const pick = figs.find((f) => f.supported && !f.builtin) ?? figs.find((f) => f.supported) ?? null;
     return {
+      // 面板据此判断自己调的方法后台到底有没有（扩展更新后没重启就会出现差异）
+      api: METHODS,
+      onboard: { seen: this.settings().onboardSeen === true, downloadUrl: this.settings().downloadUrl },
       figures: figs,
       current: figs.find((f) => f.current)?.id ?? null,
       pick: pick?.id ?? null,
@@ -516,6 +546,44 @@ export class ExtraActionsWorld {
     const c = this.ctx.cfg && typeof this.ctx.cfg === 'object' ? this.ctx.cfg : {};
     const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim().replace(/\/+$/, '') : '');
     return pick(c.remoteActionBase) || FALLBACK_ACTION_BASE;
+  }
+
+  /**
+   * 行内预览：把库里这一段的 anim.webp 读成 data URL 交给面板。
+   *
+   * 只读、只认 actions/<分类>/<id>/anim.webp：
+   *   - id 过白名单，分类从清单里取（不信任面板传来的任何路径片段）；
+   *   - 拼出来的目录必须仍在库里（isInside）；符号链接、非常规文件一律拒绝；
+   *   - 超过 PREVIEW_MAX_BYTES 的不回传，直接报一句人话；
+   *   - 按「id#大小」缓存最近几条，重复点不重复读盘；
+   *   - 老格式（只有 f_NNNN.webp）照实说不支持，不去逐个拼帧。
+   */
+  preview(id) {
+    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(String(id))) throw new Error('动作 id 不合法');
+    const lib = this.libraryDir();
+    if (!lib) throw new Error('动作库还没设置');
+    const hit = this.mergedCatalog().actions.find((x) => x.id === id && x.present !== false);
+    if (!hit) throw new Error('库里没有这一段，先补进动作库再预览');
+    const category = String(hit.category ?? '');
+    if (!/^[a-z][a-z0-9-]{0,15}$/.test(category)) throw new Error('这一段的分类名不合法');
+    const dir = join(lib, 'actions', category, id);
+    if (!isInside(lib, dir)) throw new Error('路径越界');
+    const file = join(dir, 'anim.webp');
+    const st = lstatSync(file, { throwIfNoEntry: false });
+    if (!st || st.isSymbolicLink() || !st.isFile()) {
+      throw new Error('这一段没有 anim.webp（老格式帧序列不支持面板内预览）');
+    }
+    if (st.size > PREVIEW_MAX_BYTES) {
+      throw new Error(`这一段 ${(st.size / 1048576).toFixed(1)} MB，超过预览上限 ${PREVIEW_MAX_BYTES / 1048576} MB`);
+    }
+    const key = `${id}#${st.size}`;
+    const meta = { id, zh: hit.zh, category, bytes: st.size };
+    const cached = PREVIEW_CACHE.get(key);
+    if (cached) return { ...meta, dataUrl: cached, cached: true };
+    const dataUrl = 'data:image/webp;base64,' + readFileSync(file).toString('base64');
+    if (PREVIEW_CACHE.size >= PREVIEW_CACHE_MAX) PREVIEW_CACHE.clear();
+    PREVIEW_CACHE.set(key, dataUrl);
+    return { ...meta, dataUrl, cached: false };
   }
 
   /** 面板需要知道：完整库从哪下、能不能单个下。 */
