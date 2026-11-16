@@ -34,15 +34,104 @@ export function safePackName(name) {
 }
 
 /** 这个包里该有的东西齐不齐（`id` 是这个包应有的 id）。 */
+/**
+ * 宿主能不能加载这份 figure.json。返回 null = 没问题，否则一句人话。
+ *
+ * 为什么插件自己也要判：宿主是「一条不合格 → 整个包不加载」，界面上就是
+ * "形象列表里没有它"；这时候用户点「修复」必须真的能修好，而不是被判为健康。
+ * 只查最容易写错、且我们能自动修的那几条（其余交给 tools/manifest-check.mjs）。
+ */
+/** 导出版：世界层要给每个形象包标「宿主会不会加载它」。 */
+export function manifestProblem(fig) {
+  if (!fig || typeof fig !== 'object') return 'figure.json 读不出来';
+  if (![1, 2].includes(fig.manifest)) return 'manifest 不是 1/2';
+  if (![1, 2].includes(fig.api)) return 'api 不是 1/2';
+  if (typeof fig.id !== 'string' || !SAFE_ID.test(fig.id)) return 'id 不合法';
+  if (!fig.name || typeof fig.name !== 'object') return '缺 name';
+  if (typeof fig.entry !== 'string' || !fig.entry) return '缺 entry';
+  if (typeof fig.export !== 'string' || !fig.export) return '缺 export';
+  for (const p of Array.isArray(fig.presets) ? fig.presets : []) {
+    if (!p || typeof p !== 'object' || typeof p.id !== 'string') return 'preset 缺 id';
+    if (!p.pick || typeof p.pick !== 'object') return `preset "${p.id}" 缺 pick`;
+  }
+  const BREAK = /[,，、\s【】<>＜＞]/;
+  const taken = new Set();
+  for (const w of Array.isArray(fig.vocab) ? fig.vocab : []) {
+    const id = String(w?.id ?? '');
+    if (!SAFE_ID.test(id)) return `vocab id 不合法: ${id}`;
+    for (const list of Object.values(w?.names ?? {})) {
+      for (const name of Array.isArray(list) ? list : []) {
+        if (typeof name !== 'string' || !name.trim() || name.length > 32 || BREAK.test(name)) return `vocab 名字不合法: ${id}`;
+      }
+    }
+    for (const name of [id, ...Object.values(w?.names ?? {}).flat()]) {
+      if (taken.has(name)) return `vocab 名字重复: ${name}`;
+      taken.add(name);
+    }
+  }
+  return null;
+}
+
+/** 宿主要求的必备字段；缺了就补默认值（否则整包不加载）。 */
+function ensureBasics(fig, id) {
+  let changed = 0;
+  const set = (k, v) => { if (fig[k] === undefined || fig[k] === null || fig[k] === '') { fig[k] = v; changed++; } };
+  set('manifest', 2);
+  set('api', 2);
+  set('version', '1.0.0');
+  set('entry', 'figure.js');
+  set('export', 'createActionBody');
+  if (!fig.name || typeof fig.name !== 'object') { fig.name = { zh: '深深 · 动作库', en: 'Shenshen · Action library' }; changed++; }
+  if (!fig.about || typeof fig.about !== 'object') { fig.about = { zh: '深深的动作库形象包' }; changed++; }
+  if (!Array.isArray(fig.axes)) { fig.axes = []; changed++; }
+  if (!Array.isArray(fig.presets)) { fig.presets = []; changed++; }
+  if (!Array.isArray(fig.vocab)) { fig.vocab = []; changed++; }
+  if (fig.id !== id) { fig.id = id; changed++; }
+  return changed;
+}
+
+/** 把已知能自动修的问题就地修掉：缺基本信息、preset 缺 pick、vocab 名字带禁字符。 */
+function repairManifestLight(fig, id = PACK_ID) {
+  let changed = ensureBasics(fig, id);
+  for (const p of Array.isArray(fig.presets) ? fig.presets : []) {
+    if (p && typeof p === 'object' && (!p.pick || typeof p.pick !== 'object')) { p.pick = {}; changed++; }
+  }
+  // console 若有但缺色（早期写过空对象），用默认青绿补齐
+  const DEFAULT_HUES = {
+    light: { a: '#0b7a5a', a2: '#0f9d76', on: '#ffffff', t: '#0b6b4f', c3: '#3f8f78', c4: '#8a8a90' },
+    dark: { a: '#2fd3a0', a2: '#7fe6c2', on: '#062a20', t: '#8ae8c6', c3: '#5fbfa0', c4: '#9a9aa0' },
+  };
+  for (const p of Array.isArray(fig.presets) ? fig.presets : []) {
+    if (!p || typeof p !== 'object' || !p.console || typeof p.console !== 'object') continue;
+    for (const mode of ['light', 'dark']) {
+      if (!p.console[mode] || typeof p.console[mode] !== 'object') { p.console[mode] = { ...DEFAULT_HUES[mode] }; changed++; continue; }
+      for (const [k, v] of Object.entries(DEFAULT_HUES[mode])) {
+        if (typeof p.console[mode][k] !== 'string' || !/^#[0-9a-f]{6}$/i.test(p.console[mode][k])) { p.console[mode][k] = v; changed++; }
+      }
+    }
+  }
+  const BREAK = /[,，、\s【】<>＜＞]/g;
+  for (const w of Array.isArray(fig.vocab) ? fig.vocab : []) {
+    for (const [lang, list] of Object.entries(w?.names ?? {})) {
+      if (!Array.isArray(list)) continue;
+      const next = list.map((raw) => String(raw ?? '').replace(BREAK, '').trim().slice(0, 32) || String(w.id ?? ''));
+      if (JSON.stringify(next) !== JSON.stringify(list)) { w.names[lang] = next; changed++; }
+    }
+  }
+  return changed;
+}
+
 function packHealth(dir, id = PACK_ID) {
   const fig = readJson(join(dir, 'figure.json'), null);
   const states = ['state-idle', 'state-walk', 'state-drag', 'look-around']
     .filter((s) => existsSync(join(dir, 'actions', 'core', s, 'action.json')));
+  const problem = fig && fig.id === id ? manifestProblem(fig) : 'figure.json 缺失或 id 不对';
   return {
     figureJson: !!fig && fig.id === id,
     player: existsSync(join(dir, 'figure.js')),
     states,
-    ok: !!fig && fig.id === id && existsSync(join(dir, 'figure.js')) && states.length === 4,
+    problem,
+    ok: !!fig && fig.id === id && existsSync(join(dir, 'figure.js')) && states.length === 4 && !problem,
   };
 }
 
@@ -69,6 +158,7 @@ function materialize(src, dst, id, log) {
   cpSync(src, dst, { recursive: true, force: false, errorOnExist: false });
   rmSync(join(dst, '额外动作拓展'), { recursive: true, force: true });
   const fig = readJson(join(dst, 'figure.json'), { id });
+  ensureBasics(fig, id);
   fig.id = id;
   fig.vocab = [];
   writeFileSync(join(dst, 'figure.json'), JSON.stringify(fig, null, 2) + '\n', 'utf8');
@@ -140,12 +230,21 @@ export function restorePack({ pkgDir, figuresDir, roots, target = '', name = PAC
     const duplicates = found.filter((p) => resolve(p.path) !== resolve(dst)).map((p) => p.path);
 
     if (existsSync(join(dst, 'figure.json'))) {
+      const healthyBefore = packHealth(dst, id).ok;
+      // 先去修「能自动修」的那类毛病（preset 缺 pick / 词表名字带禁字符），再判健康
+      {
+        const fig = readJson(join(dst, 'figure.json'), null);
+        if (fig && repairManifestLight(fig) > 0) {
+          writeFileSync(join(dst, 'figure.json'), JSON.stringify(fig, null, 2) + '\n', 'utf8');
+          log?.('修好了形象包清单里的小问题（宿主本来会拒绝加载）');
+        }
+      }
       const before = packHealth(dst, id);
       if (!before.ok) repairInto(src, dst, id, before, log);
       const after = packHealth(dst, id);
       log?.(`形象包已存在，未重复创建：${dst}`);
       return {
-        ok: true, created: false, repaired: !before.ok && after.ok,
+        ok: true, created: false, repaired: !healthyBefore && after.ok,
         path: dst, dir: basename(dst), root: rootOf(dst), duplicates, health: after,
       };
     }
@@ -161,12 +260,21 @@ export function restorePack({ pkgDir, figuresDir, roots, target = '', name = PAC
     const canonical = found.find((p) => p.dir === id) ?? null;
     const others = found.filter((p) => p.dir !== id);
     const t = canonical ?? found[0];
-    const before = t.bot;
+    const healthyBefore = t.bot.ok;
+    // 先修「清单里能自动补的」（基本信息 / preset.pick / 词表名字），再补缺文件
+    {
+      const fig = readJson(join(t.path, 'figure.json'), null);
+      if (fig && repairManifestLight(fig, id) > 0) {
+        writeFileSync(join(t.path, 'figure.json'), JSON.stringify(fig, null, 2) + '\n', 'utf8');
+        log?.('修好了形象包清单里的小问题（宿主本来会拒绝加载）');
+      }
+    }
+    const before = packHealth(t.path, id);
     if (!before.ok) repairInto(src, t.path, id, before, log);
     const after = packHealth(t.path, id);
     log?.(`形象包已存在，未重复创建：${t.path}`);
     return {
-      ok: true, created: false, repaired: !before.ok && after.ok,
+      ok: true, created: false, repaired: !healthyBefore && after.ok,
       path: t.path, dir: t.dir, root: t.root ?? primary,
       duplicates: others.map((p) => p.path), health: after,
     };
@@ -274,4 +382,149 @@ export function installStarterLibrary({ pkgDir, parentDir, log }) {
   cpSync(src, dst, { recursive: true, force: false, errorOnExist: false });
   log?.(`自带示例动作库已建在 ${dst}`);
   return { created: true, path: dst };
+}
+
+
+/**
+ * 给「深深」这个形象包补一套控制台配色预设（宿主 console-theme.ts 的 figureSchemes）。
+ *
+ * 为什么需要：宿主对**没有 console 预设**的包，会把配色钉回 mint（配色方案里的第一个），
+ * 用户在控制台换配色之后一切到深深就被改回去。补一套预设之后，切到深深 = 切到「深深 · 青绿」，
+ * 而不是回落默认。
+ *
+ * 只对自己这个包（id = shenshen-actions）动手：只新增、不删除、不覆盖已有预设，
+ * 改之前留 .bak，重复调用不会再写。
+ */
+export function ensureConsolePreset(packDir, log) {
+  const id = safePackName(packDir);
+  const figFile = join(packDir, 'figure.json');
+  const fig = readJson(figFile, null);
+  if (!fig || fig.id !== PACK_ID) return { changed: false, reason: 'not-our-pack' };
+  const presets = Array.isArray(fig.presets) ? fig.presets : [];
+  // 预设必须带 pick（宿主 packs.ts:330），缺了整包不加载 → 先补
+  let repaired = 0;
+  for (const p of presets) {
+    if (p && typeof p === 'object' && (!p.pick || typeof p.pick !== 'object')) { p.pick = {}; repaired++; }
+  }
+  if (repaired) {
+    const bak = join(packDir, 'figure.json.bak-配色2');
+    if (!existsSync(bak)) writeFileSync(bak, readFileSync(figFile, 'utf8'), 'utf8');
+    writeFileSync(figFile, JSON.stringify(fig, null, 2) + '\n', 'utf8');
+    log?.('补上了形象包里缺失的 preset.pick（缺它整包都不会加载）');
+  }
+  if (presets.some((p) => p && p.console)) return { changed: repaired > 0, reason: repaired ? 'repaired-pick' : 'already-has-console' };
+  if (presets.some((p) => p && p.id === CONSOLE_PRESET.id)) return { changed: false, reason: 'id-taken' };
+
+  const backup = join(packDir, 'figure.json.bak-配色');
+  if (!existsSync(backup)) writeFileSync(backup, readFileSync(figFile, 'utf8'), 'utf8');
+  fig.presets = [CONSOLE_PRESET, ...presets];
+  writeFileSync(figFile, JSON.stringify(fig, null, 2) + '\n', 'utf8');
+  log?.('已给形象包补上控制台配色预设：深深 · 青绿');
+  return { changed: true, preset: CONSOLE_PRESET.id };
+}
+
+/** 深深包的配色预设（对比度：浅色 on-accent 5.3:1、t/纸面 6.3:1；深色 8.1:1 / 11.4:1）。 */
+export const CONSOLE_PRESET = {
+  "id": "teal",
+  "pick": {},
+  "name": {
+    "zh": "深深 · 青绿",
+    "zh-Hant": "深深 · 青綠",
+    "en": "Shenshen · Teal"
+  },
+  "accent": "#0b7a5a",
+  "console": {
+    "light": {
+      "a": "#0b7a5a",
+      "a2": "#0f9d76",
+      "on": "#ffffff",
+      "t": "#0b6b4f",
+      "c3": "#3f8f78",
+      "c4": "#8a8a90"
+    },
+    "dark": {
+      "a": "#2fd3a0",
+      "a2": "#7fe6c2",
+      "on": "#062a20",
+      "t": "#8ae8c6",
+      "c3": "#5fbfa0",
+      "c4": "#9a9aa0"
+    }
+  }
+};
+
+/**
+ * 把「深深」这个形象包里的播放器升级到当前版本。
+ *
+ * 为什么需要：点击回应（戳一戳）的逻辑在 figure.js 里。老包里的播放器有三个问题 ——
+ * 没有"没有点击段就随便挑一段"的兜底、回应会播满 10 秒、以及没有上限。
+ * 只对自己这个包动手：内容没变（已有标记）就不写，改之前留 .bak-播放器。
+ */
+export function ensurePlayer(packDir, pkgDir, log) {
+  const figFile = join(packDir, 'figure.json');
+  const fig = readJson(figFile, null);
+  if (!fig || fig.id !== PACK_ID) return { changed: false, reason: 'not-our-pack' };
+  const entry = typeof fig.entry === 'string' && fig.entry ? fig.entry : 'figure.js';
+  const target = join(packDir, entry);
+  const src = join(starterRoot(pkgDir), 'figure', 'figure.js');
+  if (!existsSync(src) || !existsSync(target)) return { changed: false, reason: 'no-player' };
+  const now = readFileSync(target, 'utf8');
+  const next = readFileSync(src, 'utf8');
+  if (now === next || now.includes('REACTION_MAX')) return { changed: false, reason: 'up-to-date' };
+  writeFileSync(join(packDir, entry + '.bak-播放器'), now, 'utf8');
+  writeFileSync(target, next, 'utf8');
+  log?.('形象包的播放器已升级（点击回应更灵敏）');
+  return { changed: true };
+}
+
+/**
+ * 修掉形象包里「宿主不认」的词表名字。
+ *
+ * 宿主 packs.ts 的 readVocab 有一条硬规则：名字里不能有 , ， 、 空白 【】 <> ＜＞，
+ * 也不能超过 32 字、不能和别的词（含 id）重名。**只要有一条不合格，整份 vocab 被拒** ——
+ * 表现是 bot 一个动作都点不出来（用户会说"某个动作为什么调用不出来"）。
+ *
+ * 我们早先的清单里有一个名字带逗号（是啊，吃什么），勾上它就会把整份词表拖坏。
+ * 这里把已经是这种状态的老包修回来：只改 names，不动 id/kind/about/seconds，先备份，幂等。
+ */
+export function ensureVocabNames(packDir, log) {
+  const figFile = join(packDir, 'figure.json');
+  const fig = readJson(figFile, null);
+  if (!fig || fig.id !== PACK_ID) return { changed: false, reason: 'not-our-pack' };
+  const vocab = Array.isArray(fig.vocab) ? fig.vocab : [];
+  if (!vocab.length) return { changed: false, reason: 'empty' };
+
+  const BREAK = /[,，、\s【】<>＜＞]/g;
+  const taken = new Set();
+  const fixed = [];
+  let changed = false;
+  for (const w of vocab) {
+    const next = JSON.parse(JSON.stringify(w));
+    const id = String(next.id ?? '');
+    const names = next.names && typeof next.names === 'object' ? next.names : {};
+    for (const [lang, list] of Object.entries(names)) {
+      if (!Array.isArray(list)) continue;
+      names[lang] = list.map((raw) => {
+        let name = String(raw ?? '').replace(BREAK, '').trim().slice(0, 32) || id;
+        if (taken.has(name)) name = id;              // 撞名就退回 id（id 一定唯一且合规）
+        return name;
+      });
+    }
+    next.names = names;
+    const flat = [id, ...Object.values(names).flat()];
+    for (const n of flat) {
+      if (taken.has(n)) { changed = true; next.names = { zh: [id] }; taken.add(id); break; }
+      taken.add(n);
+    }
+    const before = JSON.stringify(w);
+    if (JSON.stringify(next) !== before) changed = true;
+    fixed.push(next);
+  }
+  if (!changed) return { changed: false, reason: 'already-clean' };
+
+  writeFileSync(join(packDir, 'figure.json.bak-词表名'), readFileSync(figFile, 'utf8'), 'utf8');
+  fig.vocab = fixed;
+  writeFileSync(figFile, JSON.stringify(fig, null, 2) + '\n', 'utf8');
+  log?.('已修好形象包里宿主不认的词表名字（否则 bot 一个动作都点不出来）');
+  return { changed: true };
 }

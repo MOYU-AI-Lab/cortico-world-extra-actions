@@ -170,13 +170,30 @@ export function readExtra(packDir) {
 }
 
 /** 按动作库条目造一条 vocab。 */
+/**
+ * 写成 figure.json 的 vocab 时，名字必须过宿主的校验（packs.ts 的 readVocab）：
+ *   - NAME_BREAK：不能含 , ， 、 空白 【】 <> ＜＞
+ *   - INLINE_TAG_MAX = 32 字
+ *   - 名字（含 id）不能重复
+ * 注意：一条不合格是**整份 vocab 被拒**（readVocab 直接返回错误），
+ * 于是 bot 一个动作都点不出来 —— 不是"那一个动作坏了"。
+ */
+const NAME_BREAK = /[,，、\s【】<>＜＞]/g;
+const NAME_MAX = 32;
+
+/** 把名字洗成宿主认的样子；洗完是空的就退回 id。 */
+export function safeWordName(raw, id) {
+  const cleaned = String(raw ?? '').replace(NAME_BREAK, '').trim().slice(0, NAME_MAX);
+  return cleaned || String(id ?? '');
+}
+
 export function vocabEntry(action) {
-  const name = action.say || action.zh;
+  const name = safeWordName(action.say || action.zh, action.word);
   return {
     id: action.word,
     kind: 'motion',
     names: { zh: [name] },
-    about: { zh: `${action.catZh || action.category}：${action.zh}` },
+    about: { zh: `${action.catZh || action.category}：${safeWordName(action.zh, action.word)}` },
     seconds: action.seconds,
   };
 }
@@ -228,9 +245,13 @@ function applyVocab(packDir, actions, managed) {
     added.push(a.word);
   }
   const removed = current.filter((w) => !have.has(w?.id)).map((w) => w?.id);
+  // 没有实质变化就不落盘：figure.json 也是宿主在读的文件，多余的重写会让
+  // 「外观跟着形象走」这类逻辑重新求值，用户改的配色看起来就"掉回默认"。
+  const unchanged = sameIds(current.map((w) => w?.id), kept.map((w) => w?.id));
+  if (unchanged) return { added, removed, baseVocab: base, written: kept.map((w) => w?.id), wrote: false };
   fig.vocab = kept;
   writeJson(file, fig);
-  return { added, removed, baseVocab: base, written: kept.map((w) => w?.id) };
+  return { added, removed, baseVocab: base, written: kept.map((w) => w?.id), wrote: true };
 }
 
 /** 清空时把词表还回去：先回到 base，实在对不上就只摘掉自己加的那些。 */
@@ -241,13 +262,18 @@ function restoreVocab(packDir, managed) {
   const current = Array.isArray(fig.vocab) ? fig.vocab : [];
   const clean = managed?.written && sameIds(current.map((w) => w?.id), managed.written);
   let restored = false;
+  let next;
   if (clean && Array.isArray(managed.baseVocab)) {
-    fig.vocab = managed.baseVocab;
+    next = managed.baseVocab;
     restored = true;
   } else {
     const drop = new Set(Array.isArray(managed?.added) ? managed.added : []);
-    fig.vocab = current.filter((w) => !drop.has(w?.id));
+    next = current.filter((w) => !drop.has(w?.id));
   }
+  if (sameIds((next ?? []).map((w) => w?.id), current.map((w) => w?.id))) {
+    return { added: [], removed: [], restored, wrote: false };   // 已经是这个状态，不碰文件
+  }
+  fig.vocab = next;
   writeJson(file, fig);
   return { added: [], removed: [], restored };
 }
@@ -597,7 +623,19 @@ export function prunePack(packDir) {
       const dir = join(actionsDir, cat.name, mod.name);
       if (!isInside(actionsDir, dir)) continue;
       const meta = readJson(join(dir, 'action.json'), null);
-      if (!meta) continue;                       // 没有 action.json 的不动
+      if (!meta) {
+        // 没有 action.json：只有在它确实是我们留下的素材目录（有 anim.webp / f_*.webp）时才清，
+        // 别的（用户自己放的东西）一律不动。
+        let names = [];
+        try { names = readdirSync(dir); } catch { continue; }
+        const ours = names.includes('anim.webp') || names.some((n) => /^f_\d{4}\.webp$/.test(n));
+        if (!ours) continue;
+        const bytes0 = dirBytes(dir);
+        rmSync(dir, { recursive: true, force: true });
+        removed.push(`${cat.name}/${mod.name}`);
+        freed += bytes0;
+        continue;
+      }
       const hasRole = Array.isArray(meta.roles) && meta.roles.length > 0;
       if (hasRole) { keep.add(meta.id ?? mod.name); continue; }
       const bytes = dirBytes(dir);
@@ -619,18 +657,21 @@ export function inspect({ packDir, libraryDir, catalog }) {
   const problems = [];
   if (!existsSync(join(packDir, 'figure.json'))) problems.push(`包里没有 figure.json：${packDir}`);
   if (!libraryDir || !existsSync(libraryDir)) problems.push(`动作库目录不存在：${libraryDir}`);
+  const extra = readExtra(packDir);
+  // 只检查"这个包里真的勾了的那些段"：库不全（105 少几段）是库自己的事，
+  // 由 state.library.present / missing 单独报，不该把包判成不健康。
+  const byId = new Map(catalog.map((a) => [a.id, a]));
   const missing = [];
-  for (const a of catalog) {
-    // 身体状态段（idle / walk / drag / turn）没有触发词，它们不是"可加的动作"
-    if (!a.word) continue;
-    if (actionProblem(a)) { missing.push(a.id); continue; }
+  for (const id of extra.ids) {
+    const a = byId.get(id);
+    if (!a || !a.word) { missing.push(id); continue; }
+    if (actionProblem(a)) { missing.push(id); continue; }
     const dir = join(libraryDir || '', 'actions', a.category, a.id);
-    if (!existsSync(dir)) { missing.push(a.id); continue; }
+    if (!existsSync(dir)) { missing.push(id); continue; }
     // 单文件动画模块（anim.webp）：帧数在文件里，不能按 f_NNNN 数
     if (a.anim || existsSync(join(dir, 'anim.webp'))) continue;
-    if (countFrames(dir) !== a.frames) missing.push(a.id);
+    if (countFrames(dir) !== a.frames) missing.push(id);
   }
-  const extra = readExtra(packDir);
   return {
     ok: problems.length === 0 && missing.length === 0,
     problems,

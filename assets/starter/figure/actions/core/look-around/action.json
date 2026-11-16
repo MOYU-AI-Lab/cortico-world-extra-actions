@@ -1,0 +1,19 @@
+{
+  "id": "look-around",
+  "zh": "东张西望",
+  "category": "core",
+  "clip": "actions/core/look-around",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": "look-around",
+  "roles": [
+    "turn"
+  ],
+  "anim": true,
+  "noMirror": false,
+  "reaction": false,
+  "random": true,
+  "source": "anim/turn/东张西望",
+  "quality": "640x360"
+}

@@ -199,6 +199,8 @@ const CSS = `<style>
 .ea-onboard-box{max-width:420px;background:var(--ea-bg);border:1px solid var(--ea-line2);padding:16px 18px;
   box-shadow:0 24px 48px -20px rgba(0,0,0,.5)}
 .ea-onboard-box b{display:block;font-size:14px;margin-bottom:6px}
+/* 正文里的 <b> 是行内强调（段数/数字），别被上面那条撑成块级 */
+.ea-onboard-box p b{display:inline;font-size:inherit;font-weight:600;margin:0}
 .ea-onboard-box p{margin:0 0 8px;font-size:12.5px;line-height:1.7;color:var(--ea-soft)}
 .ea-onboard-box p.ea-dim{color:var(--ea-dim);font-size:11.5px}
 .ea-onboard-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
@@ -304,6 +306,10 @@ const panel = {
      * 那个由宿主按面板生命周期回收。
      */
     let msgEl = null;
+    /** 忙的时候把按钮全禁掉。下载/保存/压缩都调它 —— 必须放在 mount 作用域，
+     *  这里以前误写在 click handler 里，导致下载时报 `busy is not defined`。 */
+    const busy = (on) => { for (const b of wrap.querySelectorAll('button')) b.disabled = on; };
+
     const say = (text, bad = false) => {
       const line = String(text ?? '');
       if (!msgEl) {
@@ -351,7 +357,7 @@ const panel = {
         <span class="a">›</span>
         <span class="s"><i>3</i>保存到形象包<span class="d">右下角那个绿色按钮</span></span>
         <span class="a">›</span>
-        <span class="s"><i>4</i>装扮页重新点一下形象<span class="d">插件不碰桌宠，这一步才会真正生效</span></span>
+        <span class="s"><i>4</i>保存后自动生效<span class="d">插件让桌宠就地重载；bot 说新词仍需重启 Coopanion</span></span>
       </div>
       <div class="ea-bar">
         <select class="ea-sel" data-role="pack"></select>
@@ -362,6 +368,11 @@ const panel = {
         <details class="ea-menu" data-role="libmenu">
           <summary class="ea-btn" title="动作库可以放在任意盘，路径会被记住">动作库</summary>
           <div class="ea-menu-body">
+            <div class="ea-tier" data-role="tier-wrap" style="display:flex;flex-direction:column;gap:6px;padding:2px 10px 8px">
+              <label class="ea-chk" style="font-size:12px"><input type="radio" name="ea-tier-menu" value="lite" data-role="tier" checked><span>轻版 · 约 <b data-role="tier-lite-size">370 MB</b> · 有损</span></label>
+              <label class="ea-chk" style="font-size:12px"><input type="radio" name="ea-tier-menu" value="full" data-role="tier"><span>完整版 · 约 <b data-role="tier-full-size">1.19 GB</b> · 无损</span></label>
+            </div>
+            <button type="button" data-act="download-library" title="按上面选的档位下载并安装">下载并安装</button>
             <button type="button" data-act="library" title="手动指一个已有的动作库目录">选择动作库位置…</button>
             <button type="button" data-act="find-libs" title="自动扫一遍本机像动作库的目录，列出来点一下就用">自动寻找动作库…</button>
             <button type="button" data-act="starter-library" title="在你会选的目录下建一个自带示例动作库（3 段）并设为当前库">用自带示例建库…</button>
@@ -369,7 +380,7 @@ const panel = {
             <div class="hint" data-role="libhint">当前库见右下方状态行</div>
           </div>
         </details>
-        <button class="ea-btn" data-act="restore-pack" title="建一个空的角色包（只有身体状态），位置自己选">建立空的角色包（选位置）</button>
+        <button class="ea-btn" data-act="restore-pack" data-role="restore-btn" title="建一个空的角色包（只有身体状态），位置自己选">建立空的角色包（选位置）</button>
         <span class="ea-lib" data-role="lib"></span>
       </div>
       <div class="ea-pin">
@@ -414,10 +425,12 @@ const panel = {
       <div class="ea-onboard" data-role="onboard" hidden>
         <div class="ea-onboard-box">
           <b>完整动作库还没下载</b>
-          <p>插件自带 <b data-role="onboard-have">若干</b> 段示例动作。完整库有 <b data-role="onboard-count">105</b> 段（640×360，约 <span data-role="onboard-size">370</span> MB），下载并指给插件之后，面板里的动作才能全部勾选。</p>
+          <p data-role="onboard-lead">插件自带 <b data-role="onboard-have">若干</b> 段示例动作。完整库有 <b data-role="onboard-count">105</b> 段（约 <span data-role="onboard-size">370</span> MB）。</p>
+          <p>下载之前，列表里那些<b>灰色的行</b>就是还没装进动作库的段 —— 灰色只代表「没下载」，不是坏了；下载完就会变成可勾选。</p>
           <p class="ea-dim" data-role="onboard-note">下载地址由维护者提供，拿到后这里会出现「去下载」按钮；也可以自己放好库，用「动作库」菜单里的「选择动作库位置…」指过去。</p>
           <div class="ea-onboard-acts">
-            <button class="ea-btn pri" type="button" data-act="download-library" data-role="onboard-dl" hidden>一键下载并安装</button>
+            <button class="ea-btn pri" type="button" data-act="download-library" data-tier="lite" data-role="onboard-dl" hidden>轻版 · 约 370 MB</button>
+            <button class="ea-btn" type="button" data-act="download-library" data-tier="full" data-role="onboard-dl-full" hidden>完整版 · 约 1.19 GB</button>
             <a class="ea-btn" data-role="onboard-go" target="_blank" rel="noreferrer" hidden>手动下载</a>
             <button class="ea-btn" type="button" data-act="onboard-dismiss">知道了</button>
           </div>
@@ -490,24 +503,50 @@ const panel = {
         return '扩展刚更新过，但 Coopanion 还在用旧的后台。请完全退出 Coopanion 再打开，这个按钮就能用了。';
       }
       if (/内置形象包不给写/.test(raw)) return '这是内置形象包，不能写。先「建立空的角色包」再保存。';
+      if (/超时|TimeoutError|连不上|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(raw)) {
+        return `网络没连上（${raw}）。换个网络再试，或者用「动作库 ▾」→「手动下载」自己下完整库，然后用「选择动作库位置…」指过去。`;
+      }
+      if (/HTTP 404/.test(raw)) return '下载源上那个文件不在了（404）。到「动作库 ▾」→「手动下载」拿完整库，再选位置指过去。';
       return raw || '操作失败';
     }
 
+    /** 下载期间轮询后台进度：第几片、下了多少 MB。 */
+    let pollTimer = null;
+    function startPoll() {
+      stopPoll();
+      const t0 = Date.now();
+      pollTimer = setInterval(async () => {
+        let p = null;
+        try { p = await ctx.invoke('download-progress', []); } catch { return; }
+        if (!p || !p.active) return;
+        const mb = (n) => (n / 1048576).toFixed(0);
+        const secs = Math.round((Date.now() - t0) / 1000);
+        const total = p.totalBytes ? ` / ${mb(p.totalBytes)} MB` : '';
+        say(`正在下载完整动作库… ${p.done}/${p.total} 片，已下 ${mb(p.bytes)} MB${total}（${secs}s）`);
+      }, 700);
+    }
+    function stopPoll() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
     /** 一键：下载完整动作库并设为当前库。 */
-    async function doDownloadLibrary() {
+    async function doDownloadLibrary(tier = 'lite') {
       if (!apiHas('download-library')) {
         say(explainErr({ message: 'unknown method' }), true);
         return;
       }
       busy(true);
-      say('正在下载完整动作库…（约 370 MB，视网速几分钟，别关这个页面）');
+      const sizeTxt = tier === 'full' ? '约 1.2 GB' : '约 370 MB';
+      say(`正在连接下载源…（${tier === 'full' ? '完整版' : '轻版'} ${sizeTxt}，视网速几分钟，别关这个页面）`);
+      startPoll();
       try {
-        const r = await ctx.invoke('download-library', []);
+        const r = await ctx.invoke('download-library', [tier]);
         await loadAll();
         say(`动作库已装好：${r.modules} 段 → ${r.path}`);
       } catch (err) {
         say('下载没成功：' + explainErr(err), true);
       } finally {
+        stopPoll();
         busy(false);
       }
     }
@@ -538,8 +577,10 @@ const panel = {
       const go = wrap.querySelector("[data-role=onboard-go]");
       const note = wrap.querySelector("[data-role=onboard-note]");
       const dl = wrap.querySelector('[data-role=onboard-dl]');
+      const dlFull = wrap.querySelector('[data-role=onboard-dl-full]');
       const canOne = apiHas('download-library');
       if (dl) dl.hidden = !canOne;
+      if (dlFull) dlFull.hidden = !canOne;
       if (go) {
         if (ob.downloadUrl && !canOne) { go.href = ob.downloadUrl; go.hidden = false; }
         else if (ob.downloadUrl && canOne) { go.href = ob.downloadUrl; go.hidden = false; }
@@ -547,11 +588,28 @@ const panel = {
       }
       if (note) note.hidden = !!ob.downloadUrl;
       // 数字都从清单算，别写死（换库、加动作时不用改文案）
+      // 两档体积以后台为准（TIER_INFO）；拿不到就保留 HTML 里的兜底数字
+      try {
+        const tiers = state?.download?.tiers || [];
+        const fmt = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : Math.round(b / 1048576) + ' MB');
+        for (const t of tiers) {
+          const el = wrap.querySelector(`[data-role=tier-${t.id}-size]`);
+          if (el && t.bytes) el.textContent = fmt(t.bytes);
+        }
+      } catch { /* 老版本 world 没有 tiers，保留兜底 */ }
       const totalSeg = catalog?.count ?? 0;
       const haveSeg = catalog?.present ?? 0;
-      const totalBytes = (catalog?.actions ?? []).reduce((sum, a) => sum + (a.bytes || 0), 0);
+      // 优先用后台给的分片总字节（准确）；拿不到再退回清单求和
+      const totalBytes = state?.download?.bytes
+        || (catalog?.actions ?? []).reduce((sum, a) => sum + (a.bytes || 0), 0);
       const setTxt = (sel, v) => { const node = wrap.querySelector(sel); if (node) node.textContent = String(v); };
       if (totalSeg) setTxt('[data-role=onboard-count]', totalSeg);
+      const lead = wrap.querySelector('[data-role=onboard-lead]');
+      if (lead) {
+        lead.innerHTML = haveSeg
+          ? `动作库里现在有 <b data-role="onboard-have">${haveSeg}</b> 段，完整的有 <b data-role="onboard-count">${totalSeg || 105}</b> 段（约 <span data-role="onboard-size">370</span> MB）。`
+          : `<b>你还没设置动作库</b>，所以列表里一段都没有。完整的有 <b data-role="onboard-count">${totalSeg || 105}</b> 段（约 <span data-role="onboard-size">370</span> MB）。`;
+      }
       setTxt('[data-role=onboard-have]', haveSeg);
       if (totalBytes) setTxt('[data-role=onboard-size]', Math.round(totalBytes / 1048576));
       onboardEl.hidden = false;
@@ -714,7 +772,8 @@ const panel = {
       const mounted = installed.has(a.id);
       const row = el('div', 'ea-row' + (on ? ' on' : '') + (isState || off ? ' off' : '') + (off ? ' miss' : ''));
       // 目录固定：悬停就能看到这段动作在库里的固定位置 actions/<分类>/<id>
-      row.title = '固定目录：' + (a.dir || a.clip || `actions/${a.category}/${a.id}`) + (off ? '（库里还没有，补进来才能用）' : '');
+      row.title = '固定目录：' + (a.dir || a.clip || `actions/${a.category}/${a.id}`)
+        + (off ? '｜这一段还没下载到动作库，所以是灰的、不能勾。点这一行右侧的「↓ 下载」只下这一段（约 4–19 MB），或点上面的「下载并安装」装完整 105 段。' : '');
       // 缩略图的 data URL 先不挂 src：等这一行进可视区再挂（见 mountThumbs）。
       // 尺寸由 CSS 的 64×36 定住，所以不挂 src 也不会让行跳动。
       row.__pickable = isSelectable(a) ? a : null;   // 表头复选框要用：这一行到底算不算"可勾"
@@ -727,7 +786,7 @@ const panel = {
             <span class="tag">${esc(a.catZh)}</span>
             <span class="tag">${a.seconds.toFixed(1)}s</span>
             ${mounted ? '<span class="tag acc">已装</span>' : ''}
-            ${off ? '<span class="tag warn">库里没有 · 缺帧</span>' : (isState ? '<span class="tag">状态 · 不用勾</span>' : '')}
+            ${off ? '<span class="tag warn">未下载</span>' : (isState ? '<span class="tag">状态 · 不用勾</span>' : '')}
             ${a.reaction ? '<span class="tag">点击</span>' : ''}
             ${a.noMirror ? '<span class="tag">带字</span>' : ''}
             ${a.random ? '' : '<span class="tag">不轮播</span>'}
@@ -899,7 +958,7 @@ const panel = {
       sumEl.innerHTML = `已勾选 <b>${n}</b> 段 · 约 <b>${mb(bytesOf(selected))}</b>`
         + (hiddenAll && !showAll ? `　|　<b class="warn">另有 ${hiddenAll} 段未下载</b>（勾上「显示全部」可看）` : '')
         + `　|　清单 <b>${total}</b> 条：库里 <b>${have}</b>${miss ? ` · <b class="warn">缺 ${miss}</b>` : ''}`
-        + (dead ? `　|　<b class="warn">其中 ${dead} 段库里没有</b>（保存时跳过）` : '')
+        + (dead ? `　|　<b class="warn">其中 ${dead} 段还没下载</b>（保存时会跳过）` : '')
         + (extra ? `　|　包里已有 ${extra} 段（${mb(p.extra.bytes || 0)}）` : '');
     }
 
@@ -920,6 +979,22 @@ const panel = {
       }
     }
 
+    /** 已经有深深包时，这个按钮变成「修复」—— 避免用户以为可以再建一个新的。 */
+    function syncRestoreBtn() {
+      const btn = wrap.querySelector('[data-role=restore-btn]');
+      if (!btn) return;
+      const have = (Array.isArray(state?.figures) ? state.figures : []).find((f) => f && f.id === 'shenshen-actions');
+      if (have) {
+        btn.textContent = '修复深深形象包';
+        btn.title = `已经有深深的形象包了：${have.dir ?? ''}。点它会补齐缺的文件，不会重复创建。`;
+        btn.classList.remove('pri');
+      } else {
+        btn.textContent = '建立空的角色包（选位置）';
+        btn.title = '建一个空的角色包（只有身体状态），位置自己选';
+        btn.classList.add('pri');
+      }
+    }
+
     function renderNote() {
       const p = pack();
       noteEl.hidden = true;
@@ -932,15 +1007,33 @@ const panel = {
         if (!missSeg) return '';
         const names = (catalog?.actions ?? []).filter((a) => a.present === false).slice(0, 6).map((a) => a.zh || a.id);
         const more = names.length && missSeg > names.length ? '…' : '';
-        return `<br>库里还缺 <b class="warn">${missSeg}</b> 段${names.length ? `（${esc(names.join('、'))}${more}）` : ''}`
-          + ' —— 这些勾了也写不进包；点上面的「动作库」菜单去补，或到 '
-          + ' 到「动作库」菜单下载完整库。';
+        return `<br>列表里<b>灰色的行</b>就是还没下载到动作库的段 —— 现在缺 <b class="warn">${missSeg}</b> 段`
+          + (names.length ? `（${esc(names.join('、'))}${more}）` : '')
+          + '；下载之后才会变成可勾选，现在勾了也写不进包。'
+          + '<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+          + '<button class="ea-btn pri" type="button" data-act="download-library" data-tier="lite">轻版 · 约 370 MB</button>' + '<button class="ea-btn" type="button" data-act="download-library" data-tier="full">完整版 · 约 1.19 GB</button>'
+          + '<span class="ea-dim">或者只补某一段：点那一行右侧的「↓ 下载」</span>'
+          + '</div>';
       };
-      if (!state.library.ok) {
+      // 清单不合规：宿主根本不会加载这个包（界面上就是"形象列表里没有它"）
+      if (p.problem) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
-        noteEl.innerHTML = `动作库目录没找到：<code>${esc(state.library.dir || '未设置')}</code> —— 点上面的「动作库」菜单：自动寻找，或手动选位置。`
-          + `<br>清单里的 ${state.library.count ?? 105} 段现在都算「库里没有」。`;
+        noteEl.innerHTML = `<b>这个形象包装不上：</b>${esc(p.problem)}。<br>`
+          + '宿主会因为这条不加载整个包 —— 点右边的「修复深深形象包」，插件会把能自动修的补上（会先备份）。';
+        return;
+      }
+
+      if (!state.library.ok) {
+        noteEl.hidden = false;
+        if (!state.library.dir) {
+          // 从没设过库：这是"还没开始"，不是出错
+          noteEl.className = 'ea-note';
+          noteEl.innerHTML = `<b>还没选动作库。</b>要全部 105 段：点上面「动作库 ▾」→<b>下载并安装</b>；已经有库就「动作库 ▾」→「选择动作库位置…」指过去。`;
+          return;
+        }
+        noteEl.className = 'ea-note bad';
+        noteEl.innerHTML = `动作库目录读不到：<code>${esc(state.library.dir)}</code> —— 可能被移动或删了。用「动作库 ▾」重新指一下，或直接「下载并安装」。`;
         return;
       }
       if (!p) {
@@ -961,7 +1054,7 @@ const panel = {
       noteEl.className = 'ea-note' + (offPet ? ' warn' : '');
       noteEl.innerHTML = (offPet
         ? `桌宠现在用的是 <b>${esc(cur?.name ?? state.current)}</b>，词表跟着形象走 —— 不切过去它就会说“没有这个词”。`
-          + `<br><span class="ea-dim">勾选保存后，去 Coopanion 的<b>装扮页</b>重新点一下这个形象，它才会加载新的动作表。</span><br>`
+          + `<br><span class="ea-dim">勾选保存后，插件会让桌宠<b>就地重载</b>这个形象，动作表立即生效；bot 要说出新词仍需重启 Coopanion。</span><br>`
         : '')
         + `写入 <code>${esc(p.dir)}\\额外动作拓展\\</code>　·　动作库 <code>${esc(state.library.dir)}</code>（${state.library.count} 段）`
         + missLine()
@@ -1002,6 +1095,7 @@ const panel = {
           : '当前还没设置动作库 —— 选「自动寻找动作库…」或「选择动作库位置…」';
       }
       maybeOnboard();
+      syncRestoreBtn();
       renderPack(); renderShowAll(); renderChips(); renderList(); renderInstalled(); renderSum(); renderNote(); fitFoot();
     }
 
@@ -1013,6 +1107,11 @@ const panel = {
     }
 
     /* ---------- 交互 ---------- */
+    let dlTier = 'lite';   // 动作库下载档位，跟着 radio 走
+    wrap.addEventListener('change', (e) => {
+      const t = e.target.closest('[data-role=tier]');
+      if (t) dlTier = t.value === 'full' ? 'full' : 'lite';
+    });
     packSel.onchange = () => {
       packId = packSel.value;
       loadSelectionFor(packId);
@@ -1034,14 +1133,13 @@ const panel = {
       const act = btn.dataset.act;
       // 「动作库 ▾」里点完就收起来，别让菜单挂在打开对话框后面
       const libMenu = wrap.querySelector('[data-role=libmenu]');
-      if (libMenu && (act === 'library' || act === 'find-libs' || act === 'starter-library')) libMenu.open = false;
-      const busy = (on) => { for (const b of wrap.querySelectorAll('button')) b.disabled = on; };
-      try {
+      if (libMenu && (act === 'library' || act === 'find-libs' || act === 'starter-library' || act === 'download-library')) libMenu.open = false;
+        try {
         if (act === 'onboard-dismiss') {
           onboardEl.hidden = true;
           try { await ctx.invoke('dismiss-onboard', []); } catch { /* 老版本 world 没有这个方法，忽略 */ }
         } else if (act === 'download-library') {
-          await doDownloadLibrary();
+          await doDownloadLibrary(btn.dataset.tier === 'full' ? 'full' : btn.dataset.tier === 'lite' ? 'lite' : dlTier);
           if (onboardEl) onboardEl.hidden = true;
         } else if (act === 'pv-close') {
           closePreview();
@@ -1072,9 +1170,10 @@ const panel = {
             const skipped = Array.isArray(r.skipped) ? r.skipped : [];
             const names = skipped.slice(0, 5).map((id) => catalog.actions.find((a) => a.id === id)?.zh ?? id);
             const tail = skipped.length
-              ? `；库里没有的 ${skipped.length} 段已跳过${names.length ? `（${names.join('、')}${skipped.length > names.length ? '…' : ''}）` : ''}`
+              ? `；还没下载的 ${skipped.length} 段已跳过${names.length ? `（${names.join('、')}${skipped.length > names.length ? '…' : ''}）` : ''}`
               : '';
-            say(`已写入 ${r.count} 段，${mb(r.bytes)}${tail}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}；去装扮页重新点一下这个形象才会生效`, !!skipped.length);
+            const hint = (typeof r.hint === 'string' && r.hint) ? r.hint : '保存已生效；若桌宠没反应，回装扮页重新点一下该形象即可。';
+            say(`已写入 ${r.count} 段，${mb(r.bytes)}${tail}；词表 +${r.vocab.added.length} −${r.vocab.removed.length}。${hint}`, !!skipped.length);
           }
           libEl.textContent = state.library.ok ? `${state.library.present ?? state.library.count} / ${state.library.count} 段可用` : '动作库未设置（可放在任意盘）';
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();

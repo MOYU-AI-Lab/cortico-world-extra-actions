@@ -1,0 +1,17 @@
+{
+  "id": "eat-dumplings",
+  "zh": "吃饺子",
+  "say": "吃饺子",
+  "category": "eat",
+  "clip": "actions/eat/eat-dumplings",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": "eat-dumplings",
+  "roles": [],
+  "anim": true,
+  "noMirror": false,
+  "reaction": false,
+  "random": true,
+  "quality": "640x360"
+}

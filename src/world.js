@@ -13,9 +13,9 @@ import { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } fr
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
-import { ensureStarter, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
-import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, libraryUrl } from './online.js';
-import { petFigures, petState } from './pet.js';
+import { ensureConsolePreset, ensurePlayer, ensureStarter, ensureVocabNames, manifestProblem, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
+import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, partsFor, TIER_INFO, DEFAULT_TIER, libraryUrl } from './online.js';
+import { petFigures, petReload, petState } from './pet.js';
 
 /** 行内预览：只读库里这一段 anim.webp，转 data URL 交给面板。上限见 PREVIEW_MAX_BYTES。 */
 const PREVIEW_MAX_BYTES = 12 * 1024 * 1024;
@@ -29,15 +29,15 @@ const LIBRARY_PAGE = 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/relea
 const METHODS = [
   'state', 'catalog', 'dirs', 'save', 'remove', 'clear', 'prune', 'add',
   'reindex', 'find-libraries', 'set-library', 'use-starter-library', 'restore-pack',
-  'download-library', 'download-action', 'preview', 'dismiss-onboard', 'reload',
+  'download-library', 'download-action', 'download-progress', 'preview', 'dismiss-onboard', 'reload',
 ];
 
 const ID = 'extra-actions';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CATALOG_FILE = join(HERE, '..', 'assets', 'catalog.json');
 const PANEL = 'picker';
-/** 保存之后要说的话：插件不碰桌宠，重载交给用户。 */
-const RELOAD_HINT = '保存已生效。去 Coopanion 的装扮页重新点一下该形象，桌宠才会加载新的动作表。';
+/** 自动重载失败时退回去说的话：用户自己去装扮页点一下。 */
+const RELOAD_HINT = '保存已生效。插件没能自动重载时，回 Coopanion 的装扮页重新点一下该形象即可。';
 /** 模块目录里的 preview.webp 直接转 data URL 当缩略图（不重编码，够用）。 */
 function previewThumb(lib, clip) {
   try {
@@ -91,6 +91,22 @@ export class ExtraActionsWorld {
         log: (msg, extra) => host?.log?.info?.(msg, extra),
       });
       if (seeded.pack || seeded.library) this.bustCatalog();
+      // 老用户的深深包没有控制台配色预设 → 宿主会把配色钉回 mint（见 console-theme.ts）。
+      // 只给自己这个包补，只加不改，幂等。
+      try {
+        for (const fig of await this.figures()) {
+          if (fig?.id === 'shenshen-actions' && fig.dir) {
+            const r = ensureConsolePreset(fig.dir, (m) => host?.log?.info?.(m));
+            if (r.changed) this.bustCatalog();
+            // 播放器也升级：老包的点击回应会播满 10 秒，且没勾"点击段"时完全没反应
+            ensurePlayer(fig.dir, join(HERE, '..'), (m) => host?.log?.info?.(m));
+            // 词表名字里有宿主不认的字符时，整份 vocab 会被拒 → bot 一个动作都点不出来
+            if (ensureVocabNames(fig.dir, (m) => host?.log?.info?.(m)).changed) this.bustCatalog();
+          }
+        }
+      } catch (e) {
+        host?.log?.warn?.('补配色预设失败（不影响使用）：' + String(e?.message ?? e));
+      }
     } catch (e) {
       host?.log?.warn?.('自带素材没能铺开（不影响已有配置）', { err: String(e) });
     }
@@ -297,7 +313,11 @@ export class ExtraActionsWorld {
     const dirs = this.packDirs();
     for (const p of installed) {
       const hit = dirs.get(String(p.id));
-      const packDir = hit?.dir ?? join(dir, String(p.id));
+      const guessed = hit?.dir ?? join(dir, String(p.id));
+      // 桌宠列出来、但本地根本没有这个目录（另一个数据目录 / 别的盘）：不要凭空造条目，
+      // 否则面板会给出一个"可修复"的假包，点下去只会报错。
+      if (!hit && !existsSync(join(guessed, 'figure.json'))) continue;
+      const packDir = guessed;
       const supported = packLooksSupported(packDir);
       const extra = readExtra(packDir);
       out.push({
@@ -306,6 +326,8 @@ export class ExtraActionsWorld {
         current: p.id === current,
         builtin: p.removable === false,
         supported,
+        // 宿主对清单是一票否决：有问题它整包不加载，面板得说出来
+        problem: (() => { try { return packLooksSupported(packDir) ? manifestProblem(JSON.parse(readFileSync(join(packDir, 'figure.json'), 'utf8').replace(/^\uFEFF/, ''))) : null; } catch { return null; } })(),
         dir: packDir,
         root: hit?.root ?? dir,
         extra: { ids: extra.ids, count: extra.ids.length, bytes: extra.bytes, updatedAt: extra.updatedAt },
@@ -321,6 +343,7 @@ export class ExtraActionsWorld {
           current: id === current,
           builtin: false,
           supported: packLooksSupported(hit.dir),
+          problem: (() => { try { return manifestProblem(hit.fig); } catch { return null; } })(),
           dir: hit.dir,
           root: hit.root,
           extra: { ids: extra.ids, count: extra.ids.length, bytes: extra.bytes, updatedAt: extra.updatedAt },
@@ -387,6 +410,8 @@ export class ExtraActionsWorld {
         return this.downloadLibrary();
       case 'download-action':
         return this.downloadAction(String(a[0] ?? ''), String(a[1] ?? ''));
+      case 'download-progress':
+        return this.downloadProgress();
       // 老版本面板会调 reload：当成「重新读一遍状态」，避免 unknown method 弹错
       case 'reload':
         return this.state();
@@ -594,24 +619,46 @@ export class ExtraActionsWorld {
       base,
       actionBase,
       libraryUrl: base ? libraryUrl(base) : FALLBACK_LIBRARY,
+      // 完整库的真实字节数（分片之和）：面板提示里的「约 N MB」用它，别拿清单里的体积去猜
+      bytes: LIB_PARTS.reduce((sum, p) => sum + (p.bytes || 0), 0),
+      tiers: Object.values(TIER_INFO),
       // 完整库有 GitHub 兜底；单段必须有专门的前缀
       perAction: !!(actionBase || base),
       flat: !!actionBase,
     };
   }
 
+  /** 面板轮询：这次下载进行到哪了（没有下载时 active=false）。 */
+  downloadProgress() {
+    return this._dl ?? { active: false };
+  }
+
   /** 一键：下载完整动作库 → 解压进动作库 → 设为当前库。 */
-  async downloadLibrary() {
+  async downloadLibrary(tier = DEFAULT_TIER) {
     const info = this.downloadInfo();
+    const parts = partsFor(tier);
+    const tierInfo = TIER_INFO[tier] ?? TIER_INFO[DEFAULT_TIER];
     const existing = this.libraryDir();
     // 没配自家源时：走 npm 分片（国内走 npmmirror，比 GitHub 稳）
     if (!info.base && LIB_PARTS.length) {
       const dest = existing && existsSync(existing) ? existing : join(this.dataDir, 'shenshen-library');
-      const r = await installLibraryParts({
-        dest,
-        log: (m) => this.host?.log?.info?.(m),
-        onProgress: (i, n) => this.host?.log?.info?.(`动作库 ${i}/${n} 片`),
-      });
+      this._dl = { active: true, phase: 'download', done: 0, total: parts.length, bytes: 0, totalBytes: tierInfo.bytes, tier, startedAt: Date.now() };
+      let r;
+      try {
+        r = await installLibraryParts({
+          parts,
+          dest,
+          log: (m) => this.host?.log?.info?.(m),
+          onProgress: (p) => {
+            this._dl = { ...this._dl, ...p, active: true, phase: 'download' };
+            this.host?.log?.info?.(`动作库 ${p.done}/${p.total} 片`);
+          },
+        });
+      } catch (e) {
+        this._dl = { ...(this._dl ?? {}), active: false, phase: 'error', error: String(e?.message ?? e) };
+        throw e;
+      }
+      this._dl = { ...this._dl, active: false, phase: 'done', modules: r.modules, failed: r.failed, errors: r.errors };
       // 分片有失败（镜像没同步等）时就再用整包兜一次，别让用户停在半截
       if (!r.ok || r.modules < 20) {
         this.host?.log?.warn?.(`分片装了 ${r.modules} 段（失败 ${r.failed} 片），改用整包兜底`);
@@ -626,17 +673,27 @@ export class ExtraActionsWorld {
       }
       this.saveSettings({ libraryDir: r.path });
       this.bustCatalog();
+      this._dl = { ...(this._dl ?? {}), active: false, phase: 'done', modules: r.modules, failed: r.failed };
       return { ok: r.ok, ...r, libraryDir: r.path };
     }
     if (!info.libraryUrl) throw new Error('还没配置下载源');
-    const r = await installLibrary({
-      url: info.libraryUrl,
-      libraryDir: existing,
-      dataDir: this.dataDir,
-      log: (m) => this.host?.log?.info?.(m),
-    });
+    this._dl = { active: true, phase: 'zip', done: 0, total: 1, bytes: 0, totalBytes: 0, startedAt: Date.now() };
+    let r;
+    try {
+      r = await installLibrary({
+        url: info.libraryUrl,
+        libraryDir: existing,
+        dataDir: this.dataDir,
+        log: (m) => this.host?.log?.info?.(m),
+      });
+    } catch (e) {
+      // 整包也失败：进度必须回到"不活跃"，否则面板会一直显示"正在连接下载源…"
+      this._dl = { ...this._dl, active: false, phase: 'error', error: String(e?.message ?? e) };
+      throw e;
+    }
     this.saveSettings({ libraryDir: r.path });
     this.bustCatalog();
+    this._dl = { ...(this._dl ?? {}), active: false, phase: 'done', modules: r.modules, bytes: r.bytes };
     this.host?.log?.info?.(`动作库已装好：${r.modules} 段（新增 ${r.added}）`);
     return { ok: true, ...r, libraryDir: r.path };
   }
@@ -790,7 +847,7 @@ export class ExtraActionsWorld {
     const r = prunePack(pack.dir);
     this.bustCatalog();
     this.host?.log?.info?.(`额外动作拓展：${pack.id} 瘦身，删掉 ${r.removed.length} 个模块`, { freedMB: Math.round(r.freed / 1048576) });
-    return { ok: true, pack: pack.id, ...r, hint: RELOAD_HINT };
+    return { ok: true, pack: pack.id, ...r, hint: await this.appliedHint(pack.id) };
   }
 
   /** 拿到的 packDir 必须真在某个形象包根下面，否则不写。 */
@@ -800,6 +857,34 @@ export class ExtraActionsWorld {
       throw new Error(`形象包不在任何形象包目录里：${dir}（可用：${roots.join('；')}）`);
     }
     return dir;
+  }
+
+  /**
+   * 写完包之后要返回给面板的那句话，顺便把「生效」这一步做掉。
+   *
+   * 以前只回一句「去装扮页重新点一下」，用户十次有八次不会去点，
+   * 表现就是「勾了动作、桌宠却完全不听使唤」。现在：桌宠正在用这个包就地重载一次
+   * （等价于装扮页点一下，幂等、不改任何设置）；没在用这个包就如实说没生效。
+   * 重载失败不影响保存结果，只是退回老提示。
+   */
+  async appliedHint(packId) {
+    let now = '';
+    try {
+      const st = await petState();
+      now = String(st?.skin?.figure ?? '');
+    } catch (e) {
+      return `${RELOAD_HINT}（没连上桌宠：${e?.message ?? e}）`;
+    }
+    if (now && now !== packId) {
+      return `已写入。桌宠现在用的是「${now}」，不是这个包 —— 切到它之后动作表才生效（bot 说出新词仍需重启 Coopanion）。`;
+    }
+    try {
+      const r = await petReload();
+      this.host?.log?.info?.(`额外动作拓展：已让桌宠就地重载 ${r.figure}`);
+      return '已写入，并让桌宠就地重载了这个形象 —— 动作表立即生效（点击回应、拖动、待机轮播都算）。bot 要说出新词仍需重启 Coopanion。';
+    } catch (e) {
+      return `${RELOAD_HINT}（自动重载没成功：${e?.message ?? e}）`;
+    }
   }
 
   async saveAction(packId, ids) {
@@ -844,7 +929,7 @@ export class ExtraActionsWorld {
       missing: absent.length,
     });
 
-    return { ok: true, pack: pack.id, ...result, hint: RELOAD_HINT };
+    return { ok: true, pack: pack.id, ...result, hint: await this.appliedHint(pack.id) };
   }
 
   /** 删掉单个动作拓展：其余保持勾选，词表同步。 */
@@ -859,7 +944,7 @@ export class ExtraActionsWorld {
     this.bustCatalog();
     const r = removeOne({ packDir: pack.dir, id, catalog: this.mergedCatalog().actions, libraryDir, pack: { id: pack.id, name: pack.name } });
     this.host?.log?.info?.(`额外动作拓展：从 ${pack.id} 删掉 ${id}`, { remaining: r.remaining, cleared: r.cleared });
-    return { ok: true, pack: pack.id, ...r, hint: RELOAD_HINT };
+    return { ok: true, pack: pack.id, ...r, hint: await this.appliedHint(pack.id) };
   }
 
   async clearAction(packId) {
@@ -871,6 +956,6 @@ export class ExtraActionsWorld {
     this.assertPackInside(pack.dir);
     this.bustCatalog();
     const r = clear(pack.dir, this.mergedCatalog().actions, pack.id);
-    return { ok: true, pack: pack.id, ...r, hint: RELOAD_HINT };
+    return { ok: true, pack: pack.id, ...r, hint: await this.appliedHint(pack.id) };
   }
 }

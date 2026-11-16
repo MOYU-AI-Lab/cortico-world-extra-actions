@@ -1,0 +1,19 @@
+{
+  "id": "state-drag",
+  "zh": "被拎起悬空",
+  "category": "core",
+  "clip": "actions/core/state-drag",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": null,
+  "roles": [
+    "drag"
+  ],
+  "anim": true,
+  "noMirror": false,
+  "reaction": false,
+  "random": true,
+  "source": "anim/drag/被鼠标拖拽悬空反馈",
+  "quality": "640x360"
+}

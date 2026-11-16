@@ -1,0 +1,52 @@
+{
+  "manifest": 2,
+  "api": 2,
+  "id": "shenshen-actions",
+  "version": "1.0.0",
+  "name": {
+    "zh": "深深 · 动作库",
+    "zh-Hant": "深深 · 動作庫",
+    "en": "Shenshen · Action library"
+  },
+  "about": {
+    "zh": "深深的动作拆成独立动作模块：每段一个目录、一张清单，可单独提取使用（640×360 单文件高清）。这里自带 3 段示例，其余 102 段用「额外动作拓展」面板从高清动作库加进来。",
+    "en": "Shenshen clips as standalone action modules (640×360 single-file HD). Three samples ship here; add the rest from the HD action library with the Extra Actions panel."
+  },
+  "author": "MerZlin/dsh-pet-indesktop（角色与动画素材）/ DSH-PET 工作区（形象包代码与封装）",
+  "license": "MIT",
+  "entry": "figure.js",
+  "export": "createActionBody",
+  "thumb": "actions/core/cheer-wave/anim.webp",
+  "axes": [],
+  "presets": [],
+  "vocab": [
+    {
+      "id": "cheer-wave",
+      "zh": "元气挥手"
+    },
+    {
+      "id": "eat-dumplings",
+      "zh": "吃饺子"
+    },
+    {
+      "id": "fireworks",
+      "zh": "放烟花"
+    }
+  ],
+  "sounds": {},
+  "can": {
+    "walk": true
+  },
+  "moves": [],
+  "needs": [],
+  "credits": [
+    {
+      "role": "形象包机制与插件制作",
+      "name": "丹尼尔（Daniele贤狼赫萝）"
+    },
+    {
+      "role": "制作 · 素材与实现",
+      "name": "Net-ang（奶糖_Net）"
+    }
+  ]
+}

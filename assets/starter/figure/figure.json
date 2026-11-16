@@ -1,0 +1,68 @@
+{
+  "manifest": 2,
+  "api": 2,
+  "id": "shenshen-actions",
+  "version": "1.0.0",
+  "name": {
+    "zh": "深深 · 动作库",
+    "zh-Hant": "深深 · 動作庫",
+    "en": "Shenshen · Action library"
+  },
+  "about": {
+    "zh": "把深深的 105 段动画拆成独立动作模块：每段一个目录、一张清单，可单独提取使用。其中 102 段能被点名（【吃饺子】【放烟花】……），其余是待机、走路、被拎起这类状态。",
+    "en": "All 105 Shenshen clips as separate action modules: one folder and one manifest entry each, usable on its own. 102 of them can be called by name."
+  },
+  "author": "MerZlin/dsh-pet-indesktop（角色与动画素材）/ DSH-PET 工作区（形象包代码与封装）",
+  "license": "MIT",
+  "entry": "figure.js",
+  "export": "createActionBody",
+  "thumb": "thumb.png",
+  "axes": [],
+  "presets": [
+    {
+      "id": "teal",
+      "name": {
+        "zh": "深深 · 青绿",
+        "zh-Hant": "深深 · 青綠",
+        "en": "Shenshen · Teal"
+      },
+      "accent": "#0b7a5a",
+      "console": {
+        "light": {
+          "a": "#0b7a5a",
+          "a2": "#0f9d76",
+          "on": "#ffffff",
+          "t": "#0b6b4f",
+          "c3": "#3f8f78",
+          "c4": "#8a8a90"
+        },
+        "dark": {
+          "a": "#2fd3a0",
+          "a2": "#7fe6c2",
+          "on": "#062a20",
+          "t": "#8ae8c6",
+          "c3": "#5fbfa0",
+          "c4": "#9a9aa0"
+        }
+      },
+      "pick": {}
+    }
+  ],
+  "vocab": [],
+  "sounds": {},
+  "can": {
+    "walk": true
+  },
+  "moves": [],
+  "needs": [],
+  "credits": [
+    {
+      "role": "形象包机制与插件制作",
+      "name": "丹尼尔（Daniele贤狼赫萝）"
+    },
+    {
+      "role": "制作 · 素材与实现",
+      "name": "Net-ang（奶糖_Net）"
+    }
+  ]
+}

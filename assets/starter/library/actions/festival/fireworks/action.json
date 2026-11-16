@@ -1,0 +1,17 @@
+{
+  "id": "fireworks",
+  "zh": "放烟花",
+  "say": "放烟花",
+  "category": "festival",
+  "clip": "actions/festival/fireworks",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": "fireworks",
+  "roles": [],
+  "anim": true,
+  "noMirror": false,
+  "reaction": false,
+  "random": true,
+  "quality": "640x360"
+}

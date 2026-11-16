@@ -1,0 +1,17 @@
+{
+  "id": "cheer-wave",
+  "zh": "元气挥手",
+  "say": "元气挥手",
+  "category": "core",
+  "clip": "actions/core/cheer-wave",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": "cheer-wave",
+  "roles": [],
+  "anim": true,
+  "noMirror": false,
+  "reaction": true,
+  "random": true,
+  "quality": "640x360"
+}

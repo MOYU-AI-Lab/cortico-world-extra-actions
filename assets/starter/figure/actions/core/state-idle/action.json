@@ -1,0 +1,19 @@
+{
+  "id": "state-idle",
+  "zh": "待机呼吸",
+  "category": "core",
+  "clip": "actions/core/state-idle",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": null,
+  "roles": [
+    "idle"
+  ],
+  "anim": true,
+  "noMirror": false,
+  "reaction": false,
+  "random": true,
+  "source": "anim/idle/待机呼吸休闲",
+  "quality": "640x360"
+}

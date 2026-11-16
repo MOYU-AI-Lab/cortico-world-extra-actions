@@ -1,0 +1,19 @@
+{
+  "id": "state-walk",
+  "zh": "漂浮踏步",
+  "category": "core",
+  "clip": "actions/core/state-walk",
+  "frames": 241,
+  "fps": 24,
+  "seconds": 10.042,
+  "word": null,
+  "roles": [
+    "walk"
+  ],
+  "anim": true,
+  "noMirror": false,
+  "reaction": false,
+  "random": true,
+  "source": "anim/move/漂浮踏步",
+  "quality": "640x360"
+}
