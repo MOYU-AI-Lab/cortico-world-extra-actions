@@ -198,8 +198,66 @@ export function vocabEntry(action) {
   };
 }
 
-/** 上一次写下去的 vocab id 序列，和现在一样就说明没人改过，可以干净地回到 base。 */
-const sameIds = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
+/**
+ * 比「id 序列」更严的相等判断：names / about / seconds 改了也算改过。
+ *
+ * 以前只比 id，于是用户把「吃饺子」改成「饺子」再保存，我们会认为"没人动过"，
+ * 把旧快照原样写回去 —— 用户的修改就这么没了。
+ */
+const sameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** 一个词条占用的所有名字：id 和 names 里每个语言的每个别名。 */
+const aliasesOf = (w) => Object.values(w?.names ?? {}).flatMap((names) => Array.isArray(names) ? names : []).filter((name) => typeof name === 'string');
+
+/**
+ * 给新词挑一个不和任何已用名字冲突的名字：撞了就加 2、3…（已有词条一个字都不改）。
+ *
+ * 宿主 packs.ts 的 readVocab 只要发现重名（id 与全部别名共用一个命名空间）就拒掉**整份** vocab，
+ * 表现是 bot 一个动作都点不出来 —— 所以写之前必须先把名字避开。
+ */
+export function uniqueName(name, reserved) {
+  const base = String(name ?? '');
+  if (!reserved.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const suffix = String(n);
+    const candidate = base.slice(0, NAME_MAX - suffix.length) + suffix;
+    if (!reserved.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * 把用户自上次写入之后的改动合并回原始词表（baseVocab）。
+ *
+ * - 老词条：用户改过内容就保留用户的版本（current 优先），没改过就用 base 里那份；
+ * - 扩展加的词：跟 `writtenVocab` 比，被改过就当用户词留着，没改过就交回 base 去管；
+ * - 老账本没有 `writtenVocab`（0.3.34 及以前）：按清单里的原始条目推断，推不出来就保留。
+ *
+ * 保留"被用户改过的扩展词"的代价是：清空动作后可能剩下一个指向已删动作的词，
+ * 需要人工核对 —— 但比直接覆盖用户的修改好。
+ */
+function reconcileBaseVocab(current, managed, catalog = []) {
+  if (!Array.isArray(managed?.baseVocab) || !Array.isArray(managed?.written)) return current;
+  const before = managed.baseVocab;
+  const currentById = new Map(current.map((w) => [w?.id, w]));
+  const beforeIds = new Set(before.map((w) => w?.id));
+  const writtenIds = new Set(managed.written);
+  const writtenById = new Map((Array.isArray(managed.writtenVocab) ? managed.writtenVocab : []).map((w) => [w?.id, w]));
+  const catalogByWord = new Map((Array.isArray(catalog) ? catalog : []).filter((a) => a?.word).map((a) => [a.word, a]));
+  const base = [];
+  for (const item of before) {
+    if (currentById.has(item?.id)) base.push(currentById.get(item?.id));
+    else if (!writtenIds.has(item?.id)) base.push(item);   // 上次被扩展藏起来的原词，清空时仍要还回去
+    // 上次可见、现在不见了 → 用户自己删的，不回填
+  }
+  for (const item of current) {
+    if (beforeIds.has(item?.id)) continue;
+    const fromCatalog = catalogByWord.get(item?.id);
+    const previous = writtenById.get(item?.id) ?? (fromCatalog ? vocabEntry(fromCatalog) : undefined);
+    if (!writtenIds.has(item?.id) || !previous || !sameValue(item, previous)) {
+      base.push(item);   // 用户新加的词，或用户改过的扩展词
+    }
+  }
+  return base;
+}
 
 /**
  * 写 figure.json 的动作词。
@@ -208,7 +266,7 @@ const sameIds = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b
  * 表情、以及非 motion 的条目一个字都不动。第一次改之前留 figure.json.bak-额外动作拓展，
  * 并把原始 vocab 记在 .managed.json 里 —— 「清空拓展」会把原文还回去。
  */
-function applyVocab(packDir, actions, managed) {
+function applyVocab(packDir, actions, managed, catalog = []) {
   const file = join(packDir, 'figure.json');
   const fig = readJson(file);
   if (!fig) throw new Error('figure.json 读不动，词表没法更新');
@@ -216,8 +274,8 @@ function applyVocab(packDir, actions, managed) {
   if (!existsSync(backup)) writeText(backup, readFileSync(file, 'utf8'));
 
   const current = Array.isArray(fig.vocab) ? fig.vocab : [];
-  const clean = managed?.written && sameIds(current.map((w) => w?.id), managed.written);
-  const base = (clean && Array.isArray(managed.baseVocab)) ? managed.baseVocab : current;
+  const currentById = new Map(current.map((w) => [w?.id, w]));
+  const base = reconcileBaseVocab(current, managed, catalog);
 
   const wanted = new Set(actions.map((a) => a.word).filter(Boolean));
   // 判据不是「谁加的」，而是「这段动作还在不在包里」：
@@ -237,40 +295,52 @@ function applyVocab(packDir, actions, managed) {
   };
   const kept = base.filter((w) => w?.kind !== 'motion' || wanted.has(w?.id) || hasModule(w?.id));
   const have = new Set(kept.map((w) => w?.id));
+  // 先把已占用的名字全收起来（所有动作的触发词 + 保留词条的 id 与别名），
+  // 新词挑名字时避开它们 —— 宿主见到重名会拒掉整份 vocab。
+  const reserved = new Set(actions.map((a) => a.word).filter(Boolean));
+  for (const w of kept) {
+    reserved.add(w?.id);
+    for (const name of aliasesOf(w)) reserved.add(name);
+  }
   const added = [];
   for (const a of actions) {
     if (!a.word || have.has(a.word)) continue;
-    kept.push(vocabEntry(a));
+    const existing = currentById.get(a.word);
+    // 已有的条目一个字都不改（用户可能改过名字）；只有新条目才自动避开重名。
+    const entry = existing ?? vocabEntry(a);
+    if (!existing) entry.names.zh = [uniqueName(entry.names.zh[0], reserved)];
+    kept.push(entry);
+    reserved.add(entry.id);
+    for (const name of aliasesOf(entry)) reserved.add(name);
     have.add(a.word);
     added.push(a.word);
   }
   const removed = current.filter((w) => !have.has(w?.id)).map((w) => w?.id);
   // 没有实质变化就不落盘：figure.json 也是宿主在读的文件，多余的重写会让
   // 「外观跟着形象走」这类逻辑重新求值，用户改的配色看起来就"掉回默认"。
-  const unchanged = sameIds(current.map((w) => w?.id), kept.map((w) => w?.id));
-  if (unchanged) return { added, removed, baseVocab: base, written: kept.map((w) => w?.id), wrote: false };
+  const unchanged = sameValue(current, kept);
+  if (unchanged) return { added, removed, baseVocab: base, written: kept.map((w) => w?.id), writtenVocab: kept, wrote: false };
   fig.vocab = kept;
   writeJson(file, fig);
-  return { added, removed, baseVocab: base, written: kept.map((w) => w?.id), wrote: true };
+  return { added, removed, baseVocab: base, written: kept.map((w) => w?.id), writtenVocab: kept, wrote: true };
 }
 
 /** 清空时把词表还回去：先回到 base，实在对不上就只摘掉自己加的那些。 */
-function restoreVocab(packDir, managed) {
+function restoreVocab(packDir, managed, catalog = []) {
   const file = join(packDir, 'figure.json');
   const fig = readJson(file);
   if (!fig) return { added: [], removed: [] };
   const current = Array.isArray(fig.vocab) ? fig.vocab : [];
-  const clean = managed?.written && sameIds(current.map((w) => w?.id), managed.written);
   let restored = false;
   let next;
-  if (clean && Array.isArray(managed.baseVocab)) {
-    next = managed.baseVocab;
+  if (Array.isArray(managed?.baseVocab) && Array.isArray(managed?.written)) {
+    next = reconcileBaseVocab(current, managed, catalog);
     restored = true;
   } else {
     const drop = new Set(Array.isArray(managed?.added) ? managed.added : []);
     next = current.filter((w) => !drop.has(w?.id));
   }
-  if (sameIds((next ?? []).map((w) => w?.id), current.map((w) => w?.id))) {
+  if (sameValue(next, current)) {
     return { added: [], removed: [], restored, wrote: false };   // 已经是这个状态，不碰文件
   }
   fig.vocab = next;
@@ -482,6 +552,18 @@ export function save({ packDir, ids, catalog, libraryDir, pack = {} }) {
   }
   if (!chosen.length) throw new Error('没有勾选任何可点名的动作（状态类动作不需要放进拓展）');
 
+  // 动作 id 已被别的词条当成别名时，不能擅自改用户的词条 —— 在任何写入之前就报清楚，
+  // 免得写了一半才发现（下面第 3 步会先写 index.js，之后 applyVocab 才抛错就留了个半成品）。
+  {
+    const fig = readJson(join(packDir, 'figure.json'), null);
+    if (!fig) throw new Error('figure.json 读不动，词表没法更新');
+    for (const a of chosen) {
+      const conflict = (Array.isArray(fig.vocab) ? fig.vocab : [])
+        .find((w) => w?.id !== a.word && aliasesOf(w).includes(a.word));
+      if (conflict) throw new Error(`动作 id「${a.word}」与已有词条「${conflict.id}」的别名冲突，请先调整别名，或换一个动作`);
+    }
+  }
+
   const before = readExtra(packDir);
   mkdirSync(root, { recursive: true });
 
@@ -536,7 +618,7 @@ export function save({ packDir, ids, catalog, libraryDir, pack = {} }) {
 
   // 4. figure.json 的词表：勾中的就是全部动作词（表情等非 motion 不动）
   const managedBefore = readJson(join(root, MANAGED_FILE), null);
-  const vocab = applyVocab(packDir, chosen, managedBefore);
+  const vocab = applyVocab(packDir, chosen, managedBefore, catalog);
 
   // 5. 记账
   const idsSaved = chosen.map((a) => a.id);
@@ -549,6 +631,8 @@ export function save({ packDir, ids, catalog, libraryDir, pack = {} }) {
     ids: idsSaved,
     added: vocab.added,
     written: vocab.written,
+    // 写下去的词表原文：下次保存/清空时靠它分辨「用户改过」还是「我们写的」
+    writtenVocab: vocab.writtenVocab,
     baseVocab: vocab.baseVocab,
   });
 
@@ -575,7 +659,7 @@ export function clear(packDir, catalog, packId = null) {
     if (fig) {
       const backup = join(packDir, VOCAB_BACKUP);
       if (!existsSync(backup)) writeText(backup, readFileSync(file, 'utf8'));
-      const back = restoreVocab(packDir, managed);
+      const back = restoreVocab(packDir, managed, catalog);
       vocab = { added: [], removed: Array.isArray(managed.added) ? managed.added : [], restored: !!back.restored };
     }
   }

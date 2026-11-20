@@ -9,7 +9,7 @@
  * 所有入口都过同一套校验：只认 https?://、限体积、只解 action.json / anim.webp / preview.webp / f_NNNN.webp，
  * 且落点必须在动作库目录里面。
  */
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { extractZip, listZip } from './zip.js';
@@ -18,13 +18,7 @@ import { extractTarGz } from './tar.js';
 /** 维护者把 Gitee 仓库的 raw/下载前缀填这里（末尾不要带斜杠）。 */
 export const DEFAULT_REMOTE = '';
 
-/** 动作库分片：16 卷（无损包 1186 MB，单卷 ≤77 MB），主源 Gitee，sha256 用于完整性校验。 */
-/**
- * 动作库分两档，各自一套 Gitee release 资产：
- *   轻版 lite  → tag `library`      ，8 卷，约 370 MB（VP8 有损，640×360）
- *   完整 full  → tag `library-full` ，16 卷，约 1186 MB（VP8L 无损，640×360）
- * 两档的分卷名都叫 lib-N.tgz，靠 release tag 区分；sha256 必须与线上文件逐字节一致。
- */
+/** 动作库分片：主源 Gitee（国内直连快），sha256 用于完整性校验。 */
 export const LIB_PARTS_LITE = [
   { name: 'cortico-world-shenshen-lib-1', version: '2.0.0', modules: 13, bytes: 49678723, sha256: 'd7a9df29f08fe4b4e9e2d8c497dac4c6b1ec0fcb0d7ca0caafbd31baf2009bbb',
     url: 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/library/lib-1.tgz' },
@@ -105,7 +99,7 @@ export const LIB_PARTS = LIB_PARTS_LITE;
  */
 export const partTarballs = (p) => [p.url].filter(Boolean);
 
-const MAX_LIBRARY_BYTES = 800 * 1024 * 1024;     // 单卷上限（完整版单卷 77 MB）
+const MAX_LIBRARY_BYTES = 800 * 1024 * 1024;     // 完整库上限
 const MAX_ACTION_BYTES = 32 * 1024 * 1024;       // 单个动作上限
 /** 没配 remoteBase 时的兜底：GitHub Release 上的完整库（国内可能慢，但不至于完全没有）。 */
 /** 单段动作的兜底地址：GitHub Release 上的扁平资产 `<id>.zip`（Gitee 建好后用 remoteActionBase 覆盖）。 */
@@ -126,7 +120,7 @@ function commonTop(names) {
 
 const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
 
-const FETCH_TIMEOUT_MS = 10 * 60 * 1000;     // 单片最长 10 分钟（单卷 77 MB，2 MB/s 约 40 秒）
+const FETCH_TIMEOUT_MS = 10 * 60 * 1000;     // 单片最长 10 分钟（完整版单卷 77 MB）
 
 async function fetchBytes(url, cap) {
   if (!isHttp(url)) throw new Error(`只支持 http(s) 地址：${url}`);
@@ -192,6 +186,9 @@ export async function installLibrary({ url, libraryDir, dataDir, log }) {
 /**
  * 单个动作：下载 `<base>/actions/<分类>/<id>.zip`，解到 `<库>/actions/<分类>/<id>/`。
  * 只允许落在库目录内。
+ *
+ * 先解到同父目录下的临时目录、检查通过再换上去：以前是「先 rmSync 旧目录再解压」，
+ * 遇到坏 ZIP / 缺 action.json 时旧的那段已经删了，只能重新下一遍。
  */
 export async function installAction({ url, libraryDir, category, id, log }) {
   if (!libraryDir || !isAbsolute(libraryDir) || !existsSync(libraryDir)) throw new Error('动作库还没设置好');
@@ -203,12 +200,45 @@ export async function installAction({ url, libraryDir, category, id, log }) {
   if (!normalize(dest + sep).startsWith(root)) throw new Error('落点越界');
 
   const buf = await fetchBytes(url, MAX_ACTION_BYTES);
-  rmSync(dest, { recursive: true, force: true });
-  mkdirSync(dest, { recursive: true });
-  const r = extractZip(buf, { dest, onFile: (rel) => !rel.includes('/') && /^(action\.json|anim\.webp|preview\.webp|f_\d{4}\.webp)$/.test(rel) });
-  if (!existsSync(join(dest, 'action.json'))) throw new Error('这个 zip 里没有 action.json');
-  log?.(`单个动作已装：${category}/${id}（${r.files.length} 个文件）`);
-  return { ok: true, path: dest, files: r.files.length, bytes: buf.length };
+  const parent = join(libraryDir, 'actions', category);
+  mkdirSync(parent, { recursive: true });
+  // 临时目录以 `.` 开头：库里所有扫描都跳过点目录，装到一半不会被当成一段动作。
+  const stage = mkdtempSync(join(parent, `.${id}-incoming-`));
+  const backup = `${stage}-previous`;
+  let movedOld = false;
+  try {
+    const r = extractZip(buf, { dest: stage, onFile: (rel) => !rel.includes('/') && /^(action\.json|anim\.webp|preview\.webp|f_\d{4}\.webp)$/.test(rel) });
+    const metaFile = join(stage, 'action.json');
+    if (!existsSync(metaFile)) throw new Error('这个 zip 里没有 action.json');
+    let meta;
+    try {
+      meta = JSON.parse(readFileSync(metaFile, 'utf8').replace(/^\uFEFF/, ''));
+    } catch {
+      throw new Error('这个 zip 里的 action.json 不是有效的 JSON');
+    }
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) throw new Error('这个 zip 里的 action.json 不是动作对象');
+    if ((meta.id && meta.id !== id) || (meta.category && meta.category !== category)) throw new Error('action.json 里的 id 或分类和请求的不一致');
+    if (!r.files.some((name) => name === 'anim.webp' || /^f_\d{4}\.webp$/.test(name))) throw new Error('这个 zip 里没有动画文件');
+
+    if (existsSync(dest)) { renameSync(dest, backup); movedOld = true; }
+    try {
+      renameSync(stage, dest);
+    } catch (err) {
+      if (movedOld) {
+        try { renameSync(backup, dest); movedOld = false; }
+        catch (restoreErr) { throw new Error(`替换失败，旧动作保留在 ${backup}：${restoreErr.message}`, { cause: err }); }
+      }
+      throw err;
+    }
+    if (movedOld) {
+      try { rmSync(backup, { recursive: true, force: true }); }
+      catch (err) { log?.(`新动作已装好，旧的暂留在 ${backup}：${err.message}`); }
+    }
+    log?.(`单个动作已装：${category}/${id}（${r.files.length} 个文件）`);
+    return { ok: true, path: dest, files: r.files.length, bytes: buf.length };
+  } finally {
+    if (existsSync(stage)) rmSync(stage, { recursive: true, force: true });
+  }
 }
 
 /** 由 remoteBase 拼出两个地址。 */
@@ -223,7 +253,6 @@ export const flatActionUrl = (base, id) => `${String(base).replace(/\/+$/, '')}/
  * 一片失败不影响已装好的；返回装了哪些模块。
  */
 export async function installLibraryParts({ parts = LIB_PARTS, dest, log, onProgress }) {
-  // parts 由 world.js 按档位传入（lite / full）
   mkdirSync(dest, { recursive: true });
   const before = new Set(summarize(dest));
   const totalBytes = parts.reduce((sum, p) => sum + (p.bytes || 0), 0);

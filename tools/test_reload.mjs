@@ -42,7 +42,7 @@ const { petReload } = await import('../src/pet.js');
 
 const ok = (msg) => console.log('ok  ' + msg);
 
-/* 1. 正常路径：只回填现值 */
+/* 1. 正常路径：整份 skin 原样回填，且必须是 { skin: … } 这个形状 */
 {
   calls = [];
   const r = await petReload();
@@ -50,10 +50,9 @@ const ok = (msg) => console.log('ok  ' + msg);
   assert.equal(r.figure, 'shenshen-actions');
   assert.equal(calls.length, 1, '应该只发一次 POST /api/skin');
   const b = calls[0].body;
-  assert.equal(b.figure, 'shenshen-actions');
-  assert.equal(b.palette, 'mint');
-  assert.deepEqual(Object.keys(b).sort(), ['figure', 'palette', 'scheme', 'shenshen'], '不许夹带别的字段');
-  ok('重载只回填当前形象与配色，没有夹带任何新值');
+  assert.deepEqual(Object.keys(b), ['skin'], '接口要的是 { skin: {…} }，不是扁平字段');
+  assert.deepEqual(b.skin, stateBody.skin, '回填的必须是 /api/state 里那份 skin，一字不改');
+  ok('回填形状是 { skin: {…} }，且与 /api/state 的 skin 完全相同');
 }
 
 /* 2. 桌宠没有形象：抛错，不去发 POST */

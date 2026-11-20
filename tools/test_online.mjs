@@ -139,7 +139,11 @@ check(() => assert.equal(listZip(libZip).length, 8), 'listZip sees every entry (
   check(() => assert.equal(r.files.length, 3), 'onFile filter keeps only the 3 action.json');
 }
 
-server.close();
+// 必须等 server 真正关掉再退出：以前这里直接 process.exit()，
+// Node 24 + Windows 上句柄还在关闭中就退出，会踩到 libuv 断言
+// `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`（进程码 -1073740791），
+// 明明所有检查都过了却报失败。
+await new Promise((res, rej) => server.close((err) => (err ? rej(err) : res())));
 rmSync(root, { recursive: true, force: true });
 console.log(fails.length ? `\nFAIL (${fails.length})\n- ${fails.join('\n- ')}` : '\nall checks passed');
-process.exit(fails.length ? 1 : 0);
+process.exitCode = fails.length ? 1 : 0;

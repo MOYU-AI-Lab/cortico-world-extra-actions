@@ -107,7 +107,7 @@ node tools/install-extension.mjs --extensions "<Coo 安装目录>\data\extension
 | 选择动作库位置… | 手动指一个已有的动作库目录（路径会被记住） |
 | 用自带示例建库… | 在你会选的目录下建 `<你选的目录>\深深-动作库`（3 段示例）并设为当前库 |
 | 自动寻找动作库… | 把本机像动作库的目录扫出来列成候选，点一行就切过去 |
-| 建立空的角色包（选位置） | 建一个只有 4 段身体状态、词表空、没有额外动作的空角色包，放哪由你选 |
+| 创建深深形象包 / 修复深深形象包 | **同一个按钮，按状态换名字**（0.3.35）：还没有包、或只有一个空壳时叫「创建」——选个位置建一个只有 4 段身体状态、词表空的包；包里已经写过动作、或清单有宿主不认的地方时叫「修复」——**不再让你选目录**，直接修现成那个包（补缺的 `figure.js` / 身体状态段、修 `figure.json` 里宿主会拒的字段和词表名字，会先备份，不动素材和已勾选的动作） |
 
 保存时它做的事：
 
@@ -182,7 +182,7 @@ export default [
 - **可逆**：`figure.json` 只动插件自己加过的词；一键「清空随机动作列表」会删掉整个
   `额外动作拓展/` 并把词撤干净。改动前的原文在 `figure.json.bak-额外动作拓展`。
 
-## 动作库放哪 / 两档下载
+## 动作库放哪（固定，不用另外下载）
 
 动作库就是**一个固定的文件夹**，结构固定：
 
@@ -199,15 +199,7 @@ export default [
 - 首次启用时插件把自带的示例库铺到 `<dataDir>\shenshen-library`，路径记在
   `config.json` 的 `worlds.extra-actions.libraryDir`，面板上直接显示
 - 想换位置或换一个库：点「自动寻找动作库…」让它自己扫出来，或用「选择动作库…」手动指
-- 面板里有**两档一键下载**（插件自己下、自己解压、自己装好）：
-
-  | 档位 | 体积 | 编码 | Gitee 仓库 / tag |
-  |---|---|---|---|
-  | 轻版 | 约 370 MB（8 卷） | VP8 有损 | `shenshen-actions` / `library` |
-  | 完整版 | 约 1.19 GB（16 卷） | VP8L 无损 | `shenshen-actions` / `library-full`（lib-1..8）<br>`shenshen-actions-full` / `library-full`（lib-9..16） |
-
-- 两档都是 105 段、id 完全一致；完整版只是每帧不再有 VP8 压缩痕迹，体积约 3.1 倍
-- 单独补某一段：点那一行右侧的「↓ 下载」，走 `per-action/<id>.zip`
+- **不需要**去任何地方下载动作库；动作不够就点「添加更多动作…」自己收进来
 
 ## 五、添加更多动作
 
@@ -246,7 +238,7 @@ export default [
 | `src/world.js` | 面板方法、形象包发现、保存/清空、扫库清单、参数校验 |
 | `src/writer.js` | 纯落盘逻辑 + 注入面防护（面板和命令行共用） |
 | `src/importer.js` | 「添加更多动作」：校验一套帧、收进动作库、重建清单 |
-| `src/starter.js` | 自带素材落地 + 「建立空的角色包」 |
+| `src/starter.js` | 自带素材落地 + 「创建 / 修复深深形象包」+ 词表名字修复（`ensureVocabNames`） |
 | `src/pet.js` | 本地桌宠服务的**只读**客户端（`/api/state`、`/api/figures`） |
 | `dist/webui.js` | 面板（无 import 的纯 ESM，`export default { panels: { picker } }`） |
 | `assets/catalog.json` | 105 段动作的清单 + 缩略图 |
@@ -262,4 +254,4 @@ export default [
 | `tools/test_catalog.mjs` | 清单以磁盘为准、index 可重建 |
 | `tools/test_panel_guard.mjs` | 面板模板缺节点会当场报错 |
 | `tools/test_starter.mjs` | 自带素材的首次落地 |
-| `tools/test_restore.mjs` | 「建立空的角色包」与查重 |
+| `tools/test_restore.mjs` | 「创建 / 修复深深形象包」与查重 |

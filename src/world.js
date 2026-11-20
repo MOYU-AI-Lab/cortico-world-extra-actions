@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
 import { ensureConsolePreset, ensurePlayer, ensureStarter, ensureVocabNames, manifestProblem, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
-import { FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, partsFor, TIER_INFO, DEFAULT_TIER, libraryUrl } from './online.js';
+import { DEFAULT_TIER, FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, TIER_INFO, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, libraryUrl, partsFor } from './online.js';
 import { petFigures, petReload, petState } from './pet.js';
 
 /** 行内预览：只读库里这一段 anim.webp，转 data URL 交给面板。上限见 PREVIEW_MAX_BYTES。 */
@@ -580,7 +580,8 @@ export class ExtraActionsWorld {
    *   - id 过白名单，分类从清单里取（不信任面板传来的任何路径片段）；
    *   - 拼出来的目录必须仍在库里（isInside）；符号链接、非常规文件一律拒绝；
    *   - 超过 PREVIEW_MAX_BYTES 的不回传，直接报一句人话；
-   *   - 按「id#大小」缓存最近几条，重复点不重复读盘；
+   *   - 同一个文件反复预览复用内存里的结果；库路径和文件状态（大小/改动时间）也在键里，
+   *     免得两个库里同 id 同大小的不同素材串图；
    *   - 老格式（只有 f_NNNN.webp）照实说不支持，不去逐个拼帧。
    */
   preview(id) {
@@ -601,7 +602,9 @@ export class ExtraActionsWorld {
     if (st.size > PREVIEW_MAX_BYTES) {
       throw new Error(`这一段 ${(st.size / 1048576).toFixed(1)} MB，超过预览上限 ${PREVIEW_MAX_BYTES / 1048576} MB`);
     }
-    const key = `${id}#${st.size}`;
+    // 缓存键要带上真实路径和文件状态：不同动作库里同 id、同大小的两段内容可以完全不同，
+    // 只按「id#大小」就会把 A 库的图显示成 B 库的（点哪段都是同一张错图）。
+    const key = JSON.stringify([resolve(file), st.size, st.mtimeMs, st.ctimeMs]);
     const meta = { id, zh: hit.zh, category, bytes: st.size };
     const cached = PREVIEW_CACHE.get(key);
     if (cached) return { ...meta, dataUrl: cached, cached: true };

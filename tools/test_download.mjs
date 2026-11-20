@@ -110,7 +110,8 @@ try { await w2.invoke('picker', 'download-library'); } catch (e) { err = e; }
 check(() => assert.match(String(err?.message), /404/), 'a 404 from the source is reported');
 check(() => assert.equal(readdirSync(join(r.path, 'actions')).length >= 2, true), 'the existing library is untouched');
 
-server.close();
+// 等 server 真的关掉再退出（同为 0.3.35 修的那个 libuv 断言：进程码 -1073740791）
+await new Promise((res, rej) => server.close((err) => (err ? rej(err) : res())));
 rmSync(root, { recursive: true, force: true });
 console.log(fails.length ? `\nFAIL (${fails.length})\n- ${fails.join('\n- ')}` : '\nall checks passed');
-process.exit(fails.length ? 1 : 0);
+process.exitCode = fails.length ? 1 : 0;

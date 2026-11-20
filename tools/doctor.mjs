@@ -11,6 +11,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const pack = resolve(process.argv[2] ?? '');
 if (!pack || !existsSync(join(pack, 'figure.json'))) {
@@ -42,7 +43,9 @@ let indexEntries = [];
 const indexFile = join(extrasRoot, 'index.js');
 if (existsSync(indexFile)) {
   try {
-    const mod = await import('file:///' + indexFile.replace(/\\/g, '/') + '?v=' + Math.random());
+    // 不能手拼 file:///：路径里只要有 `#`（或 `?`、`%`），URL 会在那里截断，
+    // 表现是「找不到模块」这种假报错，还连带把 index 条目算成 0。
+    const mod = await import(pathToFileURL(indexFile).href + '?v=' + Math.random());
     if (Array.isArray(mod?.default)) indexEntries = mod.default;
   } catch (e) {
     console.log('⚠️ 额外动作拓展/index.js 语法有问题，桌宠会读不了：' + String(e?.message ?? e));
@@ -98,11 +101,21 @@ for (const [id, { cat, dir, json }] of modules) {
   }
 }
 
-/* 4. vocab 里有、但包里没有的词（通常是删了模块没重存） */
-for (const w of vocabIds) {
-  if (w.startsWith?.('state-')) continue;
-  const hit = [...modules.values()].some((m) => (m.json?.word ?? null) === w);
-  if (!hit) problems.push(`"${w}"：vocab 里有，但包里没有这个模块 → bot 会点名一段不存在的动作`);
+/* 4. vocab 里的 motion 词、包里却没有对应模块（通常是删了模块没重存） */
+for (const w of vocab) {
+  // 表情（kind: expression）本来就没有动作模块 —— 以前这里把形象自带的「开心」之类
+  // 全报成"vocab 里有但包里没有"，是假错。
+  if (w?.kind !== 'motion' || String(w?.id ?? '').startsWith('state-')) continue;
+  const id = String(w?.id ?? '');
+  const hit = [...modules.values()].some((m) => (m.json?.word ?? null) === id);
+  if (hit) continue;
+  // 形象包自带的动作（actions/ 下）不归额外拓展管：报「说明」而不是「问题」，
+  // 但 action.json 都没有的，仍然算真问题。
+  const own = existsSync(join(pack, 'actions'));
+  const inOwn = own && readdirSync(join(pack, 'actions'), { withFileTypes: true })
+    .some((cat) => cat.isDirectory() && existsSync(join(pack, 'actions', cat.name, id, 'action.json')));
+  if (inOwn) notes.push(`"${id}"：不在额外动作拓展里，但形象包自带这段动作（actions/${id}）→ 正常`);
+  else problems.push(`"${id}"：vocab 里有，但包里没有这个模块 → bot 会点名一段不存在的动作`);
 }
 
 /* 输出 */

@@ -380,7 +380,7 @@ const panel = {
             <div class="hint" data-role="libhint">当前库见右下方状态行</div>
           </div>
         </details>
-        <button class="ea-btn" data-act="restore-pack" data-role="restore-btn" title="建一个空的角色包（只有身体状态），位置自己选">建立空的角色包（选位置）</button>
+        <button class="ea-btn" data-act="restore-pack" data-role="restore-btn" data-mode="create" title="建一个空的深深形象包（只有 4 段身体状态），位置自己选">创建深深形象包</button>
         <span class="ea-lib" data-role="lib"></span>
       </div>
       <div class="ea-pin">
@@ -502,7 +502,7 @@ const panel = {
       if (/unknown method/i.test(raw)) {
         return '扩展刚更新过，但 Coopanion 还在用旧的后台。请完全退出 Coopanion 再打开，这个按钮就能用了。';
       }
-      if (/内置形象包不给写/.test(raw)) return '这是内置形象包，不能写。先「建立空的角色包」再保存。';
+      if (/内置形象包不给写/.test(raw)) return '这是内置形象包，不能写。先「创建深深形象包」再保存。';
       if (/超时|TimeoutError|连不上|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(raw)) {
         return `网络没连上（${raw}）。换个网络再试，或者用「动作库 ▾」→「手动下载」自己下完整库，然后用「选择动作库位置…」指过去。`;
       }
@@ -536,7 +536,7 @@ const panel = {
         return;
       }
       busy(true);
-      const sizeTxt = tier === 'full' ? '约 1.2 GB' : '约 370 MB';
+      const sizeTxt = tier === 'full' ? '约 1.19 GB' : '约 370 MB';
       say(`正在连接下载源…（${tier === 'full' ? '完整版' : '轻版'} ${sizeTxt}，视网速几分钟，别关这个页面）`);
       startPoll();
       try {
@@ -588,7 +588,7 @@ const panel = {
       }
       if (note) note.hidden = !!ob.downloadUrl;
       // 数字都从清单算，别写死（换库、加动作时不用改文案）
-      // 两档体积以后台为准（TIER_INFO）；拿不到就保留 HTML 里的兜底数字
+      // 两档体积以后台 TIER_INFO 为准；拿不到就保留 HTML 兜底
       try {
         const tiers = state?.download?.tiers || [];
         const fmt = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : Math.round(b / 1048576) + ' MB');
@@ -596,7 +596,7 @@ const panel = {
           const el = wrap.querySelector(`[data-role=tier-${t.id}-size]`);
           if (el && t.bytes) el.textContent = fmt(t.bytes);
         }
-      } catch { /* 老版本 world 没有 tiers，保留兜底 */ }
+      } catch { /* 老版本 world 没有 tiers */ }
       const totalSeg = catalog?.count ?? 0;
       const haveSeg = catalog?.present ?? 0;
       // 优先用后台给的分片总字节（准确）；拿不到再退回清单求和
@@ -728,7 +728,7 @@ const panel = {
       const list = (state?.figures ?? []).filter((f) => f.supported && !f.builtin);
       packSel.innerHTML = '';
       if (!list.length) {
-        packSel.appendChild(el('option', null, '没有可写的角色包（点「建立空的角色包」）'));
+        packSel.appendChild(el('option', null, '没有可写的角色包（点「创建深深形象包」）'));
         packSel.disabled = true;
         return;
       }
@@ -773,7 +773,7 @@ const panel = {
       const row = el('div', 'ea-row' + (on ? ' on' : '') + (isState || off ? ' off' : '') + (off ? ' miss' : ''));
       // 目录固定：悬停就能看到这段动作在库里的固定位置 actions/<分类>/<id>
       row.title = '固定目录：' + (a.dir || a.clip || `actions/${a.category}/${a.id}`)
-        + (off ? '｜这一段还没下载到动作库，所以是灰的、不能勾。点这一行右侧的「↓ 下载」只下这一段（约 4–19 MB），或点上面的「下载并安装」装完整 105 段。' : '');
+        + (off ? '｜这一段还没下载到动作库，所以是灰的、不能勾。点这一行右侧的「↓ 下载」只下这一段（约 3.5 MB），或点上面的「下载并安装」装完整 105 段。' : '');
       // 缩略图的 data URL 先不挂 src：等这一行进可视区再挂（见 mountThumbs）。
       // 尺寸由 CSS 的 64×36 定住，所以不挂 src 也不会让行跳动。
       row.__pickable = isSelectable(a) ? a : null;   // 表头复选框要用：这一行到底算不算"可勾"
@@ -979,19 +979,40 @@ const panel = {
       }
     }
 
-    /** 已经有深深包时，这个按钮变成「修复」—— 避免用户以为可以再建一个新的。 */
+    /**
+     * 这个按钮现在是「创建」还是「修复」。
+     *
+     * 判据全用 state.figures 里现成的字段：
+     *   - 压根没有深深包 → 创建；
+     *   - 有包但一段动作都没写进去、清单也没毛病（= 首次启动自动铺的空壳）→ 也算"还没建起来"，创建；
+     *   - 其余（写过动作，或 figure.json 有宿主不认的地方）→ 修复。
+     *
+     * 以前只有「有包 / 没包」两态，而首次安装时插件会自己铺一个空壳，
+     * 于是新手一进来看到的第一个按钮就是「修复深深形象包」—— 像是哪里已经坏了。
+     */
+    function restoreAction() {
+      const list = Array.isArray(state?.figures) ? state.figures : [];
+      const have = list.find((f) => f && f.id === 'shenshen-actions') ?? null;
+      const count = have?.extra?.count ?? 0;
+      const mode = !have || (!have.problem && count === 0) ? 'create' : 'repair';
+      return { mode, have, label: mode === 'create' ? '创建深深形象包' : '修复深深形象包' };
+    }
+
+    /** 按状态给按钮换文案（创建 / 修复），并记住 mode 给点击处理用。 */
     function syncRestoreBtn() {
       const btn = wrap.querySelector('[data-role=restore-btn]');
       if (!btn) return;
-      const have = (Array.isArray(state?.figures) ? state.figures : []).find((f) => f && f.id === 'shenshen-actions');
-      if (have) {
-        btn.textContent = '修复深深形象包';
-        btn.title = `已经有深深的形象包了：${have.dir ?? ''}。点它会补齐缺的文件，不会重复创建。`;
-        btn.classList.remove('pri');
-      } else {
-        btn.textContent = '建立空的角色包（选位置）';
-        btn.title = '建一个空的角色包（只有身体状态），位置自己选';
+      const { mode, have, label } = restoreAction();
+      btn.dataset.mode = mode;
+      btn.textContent = label;
+      if (mode === 'create') {
+        btn.title = have
+          ? `已经有一个空的深深形象包了：${have.dir ?? ''}。点它会补齐缺的文件，不会重复创建。`
+          : '建一个空的深深形象包（只有 4 段身体状态），位置自己选';
         btn.classList.add('pri');
+      } else {
+        btn.title = `已经有深深的形象包了：${have.dir ?? ''}。点它只修这一个包（补缺文件、修清单里宿主不认的地方），不会重复创建。`;
+        btn.classList.remove('pri');
       }
     }
 
@@ -1020,7 +1041,7 @@ const panel = {
         noteEl.hidden = false;
         noteEl.className = 'ea-note bad';
         noteEl.innerHTML = `<b>这个形象包装不上：</b>${esc(p.problem)}。<br>`
-          + '宿主会因为这条不加载整个包 —— 点右边的「修复深深形象包」，插件会把能自动修的补上（会先备份）。';
+          + `宿主会因为这条不加载整个包 —— 点右边的「${restoreAction().label}」，插件会把能自动修的补上（会先备份）。`;
         return;
       }
 
@@ -1039,7 +1060,7 @@ const panel = {
       if (!p) {
         noteEl.hidden = false;
         noteEl.className = 'ea-note warn';
-        noteEl.innerHTML = '还没有可写的角色包。点这里<b>建一个空的</b>（只有 4 段身体状态，词表空），位置你自己选： <button class="ea-btn pri" type="button" data-act="restore-pack">建立空的角色包（选位置）</button>';
+        noteEl.innerHTML = `还没有可写的深深形象包。点这里<b>建一个空的</b>（只有 4 段身体状态，词表空），位置你自己选： <button class="ea-btn pri" type="button" data-act="restore-pack">${restoreAction().label}</button>`;
         return;
       }
       noteEl.hidden = false;
@@ -1211,22 +1232,36 @@ const panel = {
             : `已删除「${a?.zh ?? id}」，还剩 ${r.remaining} 段`);
           renderPack(); packSel.value = packId; renderList(); renderInstalled(); renderSum(); renderNote();
         } else if (act === 'restore-pack') {
+          const { mode, have, label } = restoreAction();
           let dir = null;
-          try {
-            dir = await ctx.pickPath({
-              kind: 'directory',
-              title: '选择空形象包放在哪（形象包根目录，或根下面的一个文件夹）',
-              currentPath: (state?.roots && state.roots[0]) || state?.figuresDir || undefined,
-            });
-          } catch { dir = null; }
-          if (!dir) return say('没有选目录', true);
-          if (!confirm('在这个位置建立一个「空的角色包」？\n\n' + dir
-            + '\n\n只有 4 段身体状态，没有额外动作、词表空。\n位置必须落在桌宠认的形象包目录里，否则会被拒绝。')) return;
-          busy(true); say('正在准备形象包…');
+          if (mode === 'repair') {
+            // 修复：直接对现成那个包动手，不再让用户自己去文件夹里找
+            // （以前这里照样弹「选择空形象包放在哪」，确认框还问"建立一个空的角色包？"—— 完全对不上按钮说的修复）。
+            dir = have?.dir ?? null;
+            if (!dir) return say('不知道深深形象包在哪个目录，请点「创建」重新选一个位置', true);
+            if (!confirm(`${label}？\n\n` + dir
+              + '\n\n只会补齐缺的文件、修 figure.json 里宿主不认的地方（会先备份），\n不会动已勾选的动作、动作库和素材。')) return;
+            busy(true); say('正在检查并修复形象包…');
+          } else {
+            try {
+              dir = await ctx.pickPath({
+                kind: 'directory',
+                title: '选择空形象包放在哪（形象包根目录，或根下面的一个文件夹）',
+                currentPath: (state?.roots && state.roots[0]) || state?.figuresDir || undefined,
+              });
+            } catch { dir = null; }
+            if (!dir) return say('没有选目录', true);
+            if (!confirm('在这个位置建立一个深深形象包？\n\n' + dir
+              + '\n\n只有 4 段身体状态，没有额外动作、词表空（动作要在面板里勾选保存才写进去）。\n'
+              + '位置必须落在桌宠认的形象包目录里，否则会被拒绝；那里已经有深深包的话只会补齐，不会重复创建。')) return;
+            busy(true); say('正在准备形象包…');
+          }
           const r = await ctx.invoke('restore-pack', [dir]);
           if (r.created) say('已创建空的深深形象包 → ' + (r.path || dir));
-          else if (r.repaired) say('形象包缺文件，已补齐 → ' + (r.path || dir));
-          else say('那个位置已经有这个包了，只做了检查 → ' + (r.path || dir));
+          else if (r.repaired) say('形象包有毛病，已修好 → ' + (r.path || dir));
+          else say(mode === 'repair'
+            ? '检查完毕：这个包没毛病，什么都没改 → ' + (r.path || dir)
+            : '那个位置已经有这个包了，只做了检查 → ' + (r.path || dir));
           if (r.duplicates && r.duplicates.length) {
             say(`${r.duplicates.length} 个同名包在别的形象包目录里，请自行决定留哪个：` + r.duplicates.map((p) => String(p)).join('、'), true);
           }

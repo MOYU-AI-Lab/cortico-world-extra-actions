@@ -5,7 +5,7 @@
  * 这一步专门盯"新装的人"会遇到的问题：包铺出来合不合规、保存后词表会不会被拒、
  * 播放器/配色预设有没有带、以及重复启动会不会反复写盘。
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkManifest } from './manifest-check.mjs';
@@ -55,11 +55,27 @@ function figEntry(dir) {
   return fig.entry ?? 'figure.js';
 }
 
-/* ④ 建个 4 段的小库，勾两段保存 */
+/* ④ 建个 4 段的小库，勾两段保存。
+   以前这里直接 cpSync 作者机器上的 `D:/Coopanion-data/深深-动作库-HD` —— 换台机器整个测试就挂
+   （ENOENT: lstat ...），看起来像回归。现在按「有就用真的、没有就用插件自带的示例库、
+   再没有就现造两个最小模块」来，任何机器上都能跑。 */
 const lib = join(root, 'lib');
-const hd = 'D:/Coopanion-data/深深-动作库-HD/actions';
+const hdCandidates = [
+  process.env.EXTRA_ACTIONS_HD_LIBRARY,
+  'D:/Coopanion-data/深深-动作库-HD',
+  join(here, '..', 'assets', 'starter', 'library'),
+].filter(Boolean).map((p) => (p.replace(/[\\/]+$/, '').endsWith('actions') ? p : join(p, 'actions')));
+
 for (const [cat, id] of [['core', 'cheer-hop'], ['eat', 'eat-dumplings']]) {
-  cpSync(join(hd, cat, id), join(lib, 'actions', cat, id), { recursive: true });
+  const dst = join(lib, 'actions', cat, id);
+  const src = hdCandidates.map((h) => join(h, cat, id)).find((p) => existsSync(p));
+  if (src) { cpSync(src, dst, { recursive: true }); continue; }
+  // 兜底：造一个最小可用模块（单文件动画），元数据过 actionProblem 的白名单
+  mkdirSync(dst, { recursive: true });
+  writeFileSync(join(dst, 'anim.webp'), 'RIFF0000WEBPVP8 ', 'utf8');
+  writeFileSync(join(dst, 'action.json'), JSON.stringify({
+    id, category: cat, word: id, zh: id, clip: `actions/${cat}/${id}`, frames: 1, seconds: 1, anim: true,
+  }), 'utf8');
 }
 
 const state0 = await w.invoke('picker', 'state');

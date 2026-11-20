@@ -15,6 +15,7 @@
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { EXTRA_DIR, MANAGED_FILE, uniqueName } from './writer.js';
 
 const PACK_ID = 'shenshen-actions';
 /** 包名（也是目录名、figure.json 的 id）：和 writer.js 的 id 白名单同一套。 */
@@ -495,7 +496,9 @@ export function ensureVocabNames(packDir, log) {
   if (!vocab.length) return { changed: false, reason: 'empty' };
 
   const BREAK = /[,，、\s【】<>＜＞]/g;
-  const taken = new Set();
+  // 宿主里 id 和名字共用一个命名空间：先把所有 id 占住，名字就不能等于任何 id（**包括自己的**）。
+  // 老版本这里是「撞名就退回 id」—— 如果撞的正是自己的 id，退回 id 其实还是重名，等于没修。
+  const taken = new Set(vocab.map((w) => String(w?.id ?? '')));
   const fixed = [];
   let changed = false;
   for (const w of vocab) {
@@ -505,19 +508,14 @@ export function ensureVocabNames(packDir, log) {
     for (const [lang, list] of Object.entries(names)) {
       if (!Array.isArray(list)) continue;
       names[lang] = list.map((raw) => {
-        let name = String(raw ?? '').replace(BREAK, '').trim().slice(0, 32) || id;
-        if (taken.has(name)) name = id;              // 撞名就退回 id（id 一定唯一且合规）
+        const cleaned = String(raw ?? '').replace(BREAK, '').trim().slice(0, 32);
+        const name = uniqueName(cleaned || id, taken);   // 撞了就加 2、3…，始终 ≤ 32 字
+        taken.add(name);
         return name;
       });
     }
     next.names = names;
-    const flat = [id, ...Object.values(names).flat()];
-    for (const n of flat) {
-      if (taken.has(n)) { changed = true; next.names = { zh: [id] }; taken.add(id); break; }
-      taken.add(n);
-    }
-    const before = JSON.stringify(w);
-    if (JSON.stringify(next) !== before) changed = true;
+    if (JSON.stringify(next) !== JSON.stringify(w)) changed = true;
     fixed.push(next);
   }
   if (!changed) return { changed: false, reason: 'already-clean' };
@@ -525,6 +523,25 @@ export function ensureVocabNames(packDir, log) {
   writeFileSync(join(packDir, 'figure.json.bak-词表名'), readFileSync(figFile, 'utf8'), 'utf8');
   fig.vocab = fixed;
   writeFileSync(figFile, JSON.stringify(fig, null, 2) + '\n', 'utf8');
+  syncManagedVocab(packDir, fixed, log);
   log?.('已修好形象包里宿主不认的词表名字（否则 bot 一个动作都点不出来）');
   return { changed: true };
+}
+
+/**
+ * 修完名字要把「我们写下去的原文」同步进账本。
+ *
+ * `.managed.json` 的 `writtenVocab` 是保存/清空时判断「用户改过没有」的依据：
+ * 不同步的话，我们自己改的名字会被当成用户编辑，于是永远保留 —— 清空动作之后
+ * 还会剩下一个指向已删动作的词。
+ */
+function syncManagedVocab(packDir, vocab, log) {
+  const file = join(packDir, EXTRA_DIR, MANAGED_FILE);
+  const managed = readJson(file, null);
+  if (!managed || typeof managed !== 'object') return false;
+  managed.written = vocab.map((w) => w?.id);
+  managed.writtenVocab = vocab;
+  writeFileSync(file, JSON.stringify(managed, null, 2) + '\n', 'utf8');
+  log?.('已把修好的名字同步进 .managed.json（免得下次被当成用户改动）');
+  return true;
 }

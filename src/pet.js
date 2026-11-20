@@ -80,13 +80,10 @@ export async function petReload() {
     const r = await withTimeout(fetch(`${base}/api/skin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      // 只回填现值，一个字都不是新值
-      body: JSON.stringify({
-        figure: s.figure,
-        scheme: s.scheme ?? '',
-        palette: s.palette ?? '',
-        shenshen: s.shenshen ?? '',
-      }),
+      // 注意：这个接口要的是 { skin: {...} }，不是扁平字段。
+      // 早先发扁平字段时服务端读到的是 undefined，HTTP 照样 200 —— 等于静默空操作。
+      // 这里整份 /api/state 的 skin 原样回填，一个字段都不改。
+      body: JSON.stringify({ skin: s }),
     }), 5000);
     if (!r.ok) throw new Error(`让桌宠重载失败：HTTP ${r.status}`);
     return { ok: true, figure: s.figure };
