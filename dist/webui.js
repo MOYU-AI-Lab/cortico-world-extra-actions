@@ -377,6 +377,7 @@ const panel = {
             <button type="button" data-act="find-libs" title="自动扫一遍本机像动作库的目录，列出来点一下就用">自动寻找动作库…</button>
             <button type="button" data-act="starter-library" title="在你会选的目录下建一个自带示例动作库（3 段）并设为当前库">用自带示例建库…</button>
             <div class="sep"></div>
+            <button type="button" data-act="refresh-clips" title="用修复包更新这个包里走/跑的起步动画（修前摇），并升级播放器；只对自己家的形象包生效">更新走/跑动画…</button>
             <div class="hint" data-role="libhint">当前库见右下方状态行</div>
           </div>
         </details>
@@ -506,7 +507,7 @@ const panel = {
       if (/超时|TimeoutError|连不上|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(raw)) {
         return `网络没连上（${raw}）。换个网络再试，或者用「动作库 ▾」→「手动下载」自己下完整库，然后用「选择动作库位置…」指过去。`;
       }
-      if (/HTTP 404/.test(raw)) return '下载源上那个文件不在了（404）。到「动作库 ▾」→「手动下载」拿完整库，再选位置指过去。';
+      if (/HTTP 404/.test(raw)) return '下载源上那个文件不在了（404）：要么修复包/完整库还没上传到 Gitee，要么地址变了。';
       return raw || '操作失败';
     }
 
@@ -588,7 +589,6 @@ const panel = {
       }
       if (note) note.hidden = !!ob.downloadUrl;
       // 数字都从清单算，别写死（换库、加动作时不用改文案）
-      // 两档体积以后台 TIER_INFO 为准；拿不到就保留 HTML 兜底
       try {
         const tiers = state?.download?.tiers || [];
         const fmt = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : Math.round(b / 1048576) + ' MB');
@@ -1154,11 +1154,27 @@ const panel = {
       const act = btn.dataset.act;
       // 「动作库 ▾」里点完就收起来，别让菜单挂在打开对话框后面
       const libMenu = wrap.querySelector('[data-role=libmenu]');
-      if (libMenu && (act === 'library' || act === 'find-libs' || act === 'starter-library' || act === 'download-library')) libMenu.open = false;
+      if (libMenu && (act === 'library' || act === 'find-libs' || act === 'starter-library' || act === 'download-library' || act === 'refresh-clips')) libMenu.open = false;
         try {
         if (act === 'onboard-dismiss') {
           onboardEl.hidden = true;
           try { await ctx.invoke('dismiss-onboard', []); } catch { /* 老版本 world 没有这个方法，忽略 */ }
+        } else if (act === 'refresh-clips') {
+          if (!packId) return say('先选一个形象包', true);
+          const p = state?.figures?.find((f) => f.id === packId);
+          if (!p || p.builtin) return say('内置形象包不能更新', true);
+          if (!apiHas('refresh-clips')) return say(explainErr({ message: 'unknown method' }), true);
+          if (!confirm(`用修复包更新「${p.name ?? packId}」的走/跑动画？\n\n会替换包里的 state-walk / crab-walk（有哪个换哪个）并升级播放器；勾选的动作和词表不动。`)) return;
+          busy(true); say('正在下载修复包…');
+          try {
+            const r = await ctx.invoke('refresh-clips', [packId]);
+            await loadAll();
+            say(r.hint || '已更新');
+          } catch (err) {
+            say('更新没成功：' + explainErr(err), true);
+          } finally {
+            busy(false);
+          }
         } else if (act === 'download-library') {
           await doDownloadLibrary(btn.dataset.tier === 'full' ? 'full' : btn.dataset.tier === 'lite' ? 'lite' : dlTier);
           if (onboardEl) onboardEl.hidden = true;

@@ -106,6 +106,19 @@ const MAX_ACTION_BYTES = 32 * 1024 * 1024;       // 单个动作上限
 export const FALLBACK_ACTION_BASE = 'https://github.com/MOYU-AI-Lab/cortico-world-extra-actions/releases/download/per-action';
 
 export const FALLBACK_LIBRARY = 'https://github.com/MOYU-AI-Lab/cortico-world-extra-actions/releases/download/library/shenshen-action-library.zip';
+/** 「更新走/跑动画」修复包：Gitee release（tag `fix`）上的 4 个文件，有损/无损两套。 */
+export const FIX_BASE = 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/releases/download/fix';
+/** sha256 写死：对不上就不装（用户上传的必须是这 4 个文件本身）。 */
+export const FIX_FILES = {
+  walk: {
+    lossy: { file: 'walk-fix-lossy.webp', bytes: 3690050, sha256: 'c325877ee74e9f3e87388e875afa1b344c75b483af6dbd77760da2ec3393c0dc' },
+    lossless: { file: 'walk-fix-lossless.webp', bytes: 11151228, sha256: '4ddef63ab8b46d2981ffa8094c4d7a26cf9cf195664b55f11a3a46f65c023d23' },
+  },
+  crab: {
+    lossy: { file: 'crab-fix-lossy.webp', bytes: 3575028, sha256: '4282b19bf37d59ccde5973b7bb9bb7602ab1e7f475569d996f672c66c13722db' },
+    lossless: { file: 'crab-fix-lossless.webp', bytes: 11062262, sha256: 'e360c5fcbec0b50f3624f3eb5bdb2aa4456bf6b0e999dc1a3b61f2c866de2daa' },
+  },
+};
 /** 只收这些条目：动作库的两种格式（帧序列 / 单文件动画）。 */
 const WANT = /(^|\/)actions\/[a-z][a-z0-9-]*\/[a-z0-9][a-z0-9-]*\/(action\.json|anim\.webp|preview\.webp|f_\d{4}\.webp)$/;
 
@@ -136,6 +149,21 @@ async function fetchBytes(url, cap) {
   if (len && len > cap) throw new Error(`文件太大（${(len / 1048576).toFixed(0)} MB）：${url}`);
   const buf = Buffer.from(await r.arrayBuffer());
   if (buf.length > cap) throw new Error(`文件太大（${(buf.length / 1048576).toFixed(0)} MB）`);
+  return buf;
+}
+
+/**
+ * 下载「修复包」里的一段（walk/crab × 有损/无损），校验大小、sha256 与 WebP 头。
+ * 只给面板的「更新走/跑动画」按钮用；不需要登录，和动作库下载同一条网络路径。
+ */
+export async function downloadFix(kind, variant) {
+  const spec = FIX_FILES[kind]?.[variant];
+  if (!spec) throw new Error(`没有这个修复包：${kind}/${variant}`);
+  const buf = await fetchBytes(`${FIX_BASE}/${spec.file}`, MAX_ACTION_BYTES);
+  if (buf.length !== spec.bytes) throw new Error(`修复包大小不对（${buf.length} ≠ ${spec.bytes}）：先别继续装，联系维护者核对`);
+  const got = createHash('sha256').update(buf).digest('hex');
+  if (got !== spec.sha256) throw new Error(`修复包校验不通过（sha256）：${spec.file} 被改过或不是这个版本`);
+  if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WEBP') throw new Error('修复包不是 WebP 文件');
   return buf;
 }
 

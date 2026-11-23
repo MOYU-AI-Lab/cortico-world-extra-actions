@@ -88,8 +88,65 @@ export async function createActionBody(base, opts) {
   const fig = createFigure(baseUrl, list, allow);
   const body = opts.kit.createBody(opts.host, { figure: fig });
 
-  const doWord = body.do?.bind(body);
-  if (doWord) body.do = (word) => (fig.trigger(word), doWord(word));
+  /* ---------- 跑步起步：先原地迈出第一步，再真跑（2026-11-21） ----------
+     kit 的位移由 body.walk / do('run') 触发；这里把"跑"压后 RUN_HOLD_MS，
+     期间用 holdRun 原地播跑片段（例如螃蟹走路）的起步段 —— 观感是"先迈一步 → 再开始真跑"。
+     走（run=false）与其它动作不受影响。绑在播放器里，不依赖 Coopanion 运行库补丁。 */
+  const RUN_HOLD_MS = 420;
+  const origWalk = typeof body.walk === 'function' ? body.walk.bind(body) : null;
+  const origStopWalk = typeof body.stopWalk === 'function' ? body.stopWalk.bind(body) : null;
+  const emit = typeof opts.host?.emit === 'function' ? opts.host.emit.bind(opts.host) : null;
+  let pendingRun = null;   // { gen, walkId }
+  let runGen = 0;
+  /** 开一段"原地迈步"；被新指令 / stop 顶掉时旧编号作废。 */
+  const beginRunHold = () => {
+    runGen += 1;
+    if (pendingRun) { emit?.('interrupted', { walkId: pendingRun.walkId, by: 'superseded' }); pendingRun = null; }
+    fig.holdRun(RUN_HOLD_MS / 1000 + .06);
+    return { gen: runGen, walkId: 0 };
+  };
+  if (origWalk && fig.hasRunClip) {
+    body.walk = (x, run, walkId) => {
+      if (!run) return origWalk(x, run, walkId);
+      pendingRun = beginRunHold();
+      pendingRun.walkId = walkId;
+      const gen = pendingRun.gen;
+      setTimeout(() => {
+        if (!pendingRun || pendingRun.gen !== gen) return;   // 被新的 walk / stop 顶掉
+        const p = pendingRun; pendingRun = null;
+        if (/drag|air|crouch/.test(fig.modeNow)) { emit?.('interrupted', { walkId: p.walkId, by: 'busy' }); return; }
+        origWalk(x, true, p.walkId);
+      }, RUN_HOLD_MS);
+      return true;
+    };
+    body.stopWalk = (walkId) => {
+      if (pendingRun && pendingRun.walkId === walkId) {
+        pendingRun = null;
+        emit?.('interrupted', { walkId, by: 'stop' });
+        return;
+      }
+      return origStopWalk ? origStopWalk(walkId) : undefined;
+    };
+  }
+  const kitDo = body.do?.bind(body);
+  if (kitDo) {
+    body.do = (word) => {
+      if (word === 'run' && origWalk && fig.hasRunClip) {
+        pendingRun = beginRunHold();
+        const gen = pendingRun.gen;
+        setTimeout(() => {
+          if (!pendingRun || pendingRun.gen !== gen) return;
+          pendingRun = null;
+          if (/drag|air|crouch/.test(fig.modeNow)) return;
+          fig.trigger(word);
+          kitDo(word);
+        }, RUN_HOLD_MS);
+        return;
+      }
+      fig.trigger(word);
+      kitDo(word);
+    };
+  }
 
   // 报给 World：词表里有、这里不认的词会被剔掉，所以这里必须是全量
   const words = new Set(Array.isArray(body.words) ? body.words : []);
@@ -137,6 +194,8 @@ function createFigure(base, index, allow = null) {
   }
   const idleClip = byRole.get('idle') ?? index[0]?.clip;
   const walkClip = byRole.get('walk') ?? idleClip;
+  /** 跑：清单里写了 roles: ["run"] 的段；没写就跟走共用。 */
+  const runClip = byRole.get('run') ?? walkClip;
   const dragClip = byRole.get('drag') ?? idleClip;
   const turnClip = byRole.get('turn') ?? idleClip;
 
@@ -152,6 +211,8 @@ function createFigure(base, index, allow = null) {
   let varietyAt = -1;
   let varietyIdx = 0;
   let modeNow = '';
+  /** 跑步起步占位到何时（performance.now() 毫秒）：这期间点击回应不顶掉起步动作。 */
+  let holdUntil = 0;
 
   /* ---------- 帧来源：blob URL 缓存 ---------- */
   /** key -> objectURL（压缩后的一帧约 11 KB，241 帧也就 2.6 MB） */
@@ -237,6 +298,9 @@ function createFigure(base, index, allow = null) {
     },
     /** 调试/自测用。 */
     get clip() { return clip; },
+    get modeNow() { return modeNow; },
+    /** 清单里有没有写 roles:["run"] 的段（有才做"先迈一步再跑"）。 */
+    get hasRunClip() { return byRole.has('run'); },
     get words() { return [...byWord.keys()]; },
     get actions() { return index; },
     /** 自测用：缓存了几帧、还有几帧在路上、fetch 还能不能用。 */
@@ -244,8 +308,16 @@ function createFigure(base, index, allow = null) {
 
     trigger(word) { return play(word); },
 
+    /** 跑步起步占位：原地播放 run 片段一段时间（不产生位移），由 body.walk 包装器调用。 */
+    holdRun(seconds) {
+      if (!runClip) return;
+      override = { clip: runClip, seconds, from: -1, kind: 'word' };
+      holdUntil = performance.now() + seconds * 1000;
+    },
+
     /** 点击：在可点击的回应里随机放一段；正在走 / 被拎着 / 蹲着时不打断。 */
     react() {
+      if (performance.now() < holdUntil) return false;   // 起步原地迈步的这小段先别接点击
       if (/walk|run|drag|air|crouch/.test(modeNow)) return false;
       // ① 标了"点击"的段（清单里 reaction: true）
       let pool = reactions.filter((w) => byWord.has(w) && (!allow || allow.has(w)));
@@ -288,7 +360,8 @@ function createFigure(base, index, allow = null) {
       const now = t * 1000;
 
       const held = /carry|held|drag|air|drop|throw/.test(mode);
-      const moving = /walk|move|run/.test(mode);
+      const running = /run/.test(mode);
+      const moving = running || /walk|move/.test(mode);
       const turning = mode === 'turn';
 
       // 一次性动作的计时落在本时钟上：第一帧落值，到点就放掉
@@ -308,6 +381,7 @@ function createFigure(base, index, allow = null) {
 
       const wanted = override ? override.clip
         : held ? dragClip
+        : running ? runClip
         : moving ? walkClip
         : turning ? turnClip
         : idleClip;

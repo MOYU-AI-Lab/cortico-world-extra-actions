@@ -9,12 +9,13 @@
  * 这个文件不直接碰文件内容，只做发现、校验和转发。
  */
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EXTRA_DIR, clear, inspect, isInside, packLooksSupported, prunePack, readExtra, removeOne, save } from './writer.js';
 import { addModules, rebuildIndex, scanLibrary } from './importer.js';
 import { ensureConsolePreset, ensurePlayer, ensureStarter, ensureVocabNames, manifestProblem, installStarterLibrary, libraryHealth, restorePack, safePackName } from './starter.js';
-import { DEFAULT_TIER, FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, LIB_PARTS, TIER_INFO, actionUrl, flatActionUrl, installAction, installLibrary, installLibraryParts, libraryUrl, partsFor } from './online.js';
+import { DEFAULT_TIER, FALLBACK_ACTION_BASE, FALLBACK_LIBRARY, FIX_FILES, LIB_PARTS, TIER_INFO, actionUrl, downloadFix, flatActionUrl, installAction, installLibrary, installLibraryParts, libraryUrl, partsFor } from './online.js';
 import { petFigures, petReload, petState } from './pet.js';
 
 /** 行内预览：只读库里这一段 anim.webp，转 data URL 交给面板。上限见 PREVIEW_MAX_BYTES。 */
@@ -29,7 +30,7 @@ const LIBRARY_PAGE = 'https://gitee.com/Daniele-WOLF-Holo/shenshen-actions/relea
 const METHODS = [
   'state', 'catalog', 'dirs', 'save', 'remove', 'clear', 'prune', 'add',
   'reindex', 'find-libraries', 'set-library', 'use-starter-library', 'restore-pack',
-  'download-library', 'download-action', 'download-progress', 'preview', 'dismiss-onboard', 'reload',
+  'download-library', 'download-action', 'download-progress', 'preview', 'dismiss-onboard', 'refresh-clips', 'reload',
 ];
 
 const ID = 'extra-actions';
@@ -412,6 +413,9 @@ export class ExtraActionsWorld {
         return this.downloadAction(String(a[0] ?? ''), String(a[1] ?? ''));
       case 'download-progress':
         return this.downloadProgress();
+      // 面板「更新走/跑动画」：用修复包替换包里的状态段，并升级播放器
+      case 'refresh-clips':
+        return this.refreshClips(this.cleanPackId(a[0]));
       // 老版本面板会调 reload：当成「重新读一遍状态」，避免 unknown method 弹错
       case 'reload':
         return this.state();
@@ -717,6 +721,72 @@ export class ExtraActionsWorld {
     });
     this.bustCatalog();
     return { ok: true, ...r };
+  }
+
+  /**
+   * 面板「更新走/跑动画」：把形象包里的 state-walk（以及有的话 crab-walk）换成修复包里的
+   * 版本（走/跑起步不再有缓起前摇），并把播放器升级成插件自带的那份（跑步起步「先迈一步再跑」）。
+   *
+   * 只让可写、可识别（会读 额外动作拓展）的形象包吃这套；无损包用无损版、有损包用有损版
+   * （按包里现有 anim.webp 的体积判断）。下载源与 sha256 写死在 online.js 的 FIX_FILES。
+   */
+  async refreshClips(packId) {
+    if (!packId) throw new Error('先选一个形象包');
+    const figs = await this.figures();
+    const pack = figs.find((f) => f.id === packId);
+    if (!pack) throw new Error(`没有这个形象包：${packId}`);
+    if (pack.builtin) throw new Error('内置形象包不给写');
+    if (!pack.supported) throw new Error(`「${pack.name}」不是会读额外动作拓展的播放器，不吃这套修复`);
+    this.assertPackInside(pack.dir);
+
+    const core = join(pack.dir, 'actions', 'core');
+    const result = { walk: 'missing', crab: 'missing', player: 'same' };
+    for (const [kind, name] of [['walk', 'state-walk'], ['crab', 'crab-walk']]) {
+      const dir = join(core, name);
+      const anim = join(dir, 'anim.webp');
+      if (!existsSync(anim)) continue;
+      const st = lstatSync(anim);
+      const variant = st.size > 8 * 1024 * 1024 ? 'lossless' : 'lossy';
+      const cur = readFileSync(anim);
+      // 已经是修复版就不下载：本地算哈希和修复包的 sha256 比一下
+      const spec = (kind === 'walk' ? FIX_FILES.walk : FIX_FILES.crab)[variant];
+      if (createHash('sha256').update(cur).digest('hex') === spec.sha256) { result[kind] = 'same'; continue; }
+      const buf = await downloadFix(kind, variant);
+      writeFileSync(anim, buf);
+      const prev = join(dir, 'preview.webp');
+      if (existsSync(prev)) writeFileSync(prev, buf);
+      result[kind] = variant;
+      this.host?.log?.info?.(`形象包 ${pack.id}：${name} 已更新（${variant === 'lossless' ? '无损' : '有损'}）`);
+    }
+
+    // 播放器升级：会读额外动作拓展的包，播放器都是 createActionBody 家族，换成插件自带的那份
+    try {
+      const fig = readJson(join(pack.dir, 'figure.json'), null);
+      const entry = fig && typeof fig.entry === 'string' && fig.entry ? fig.entry : 'figure.js';
+      const player = join(pack.dir, entry);
+      const src = join(HERE, '..', 'assets', 'starter', 'figure', 'figure.js');
+      if (existsSync(player) && existsSync(src)) {
+        const now = readFileSync(player, 'utf8');
+        const next = readFileSync(src, 'utf8');
+        if (now !== next && now.includes('额外动作拓展')) {
+          writeFileSync(player + '.bak-播放器', now, 'utf8');
+          writeFileSync(player, next, 'utf8');
+          result.player = 'updated';
+          this.host?.log?.info?.(`形象包 ${pack.id}：播放器已升级`);
+        }
+      }
+    } catch (e) {
+      this.host?.log?.warn?.('升级播放器失败（不影响动画替换）：' + String(e?.message ?? e));
+    }
+
+    this.bustCatalog();
+    const bits = [];
+    if (result.walk === 'lossy' || result.walk === 'lossless') bits.push(`走（${result.walk === 'lossless' ? '无损' : '有损'}）`);
+    if (result.crab === 'lossy' || result.crab === 'lossless') bits.push(`跑（${result.crab === 'lossless' ? '无损' : '有损'}）`);
+    if (result.player === 'updated') bits.push('播放器');
+    if (!bits.length) return { ok: true, pack: pack.id, ...result, changed: 0, hint: '已是最新：这个包的走/跑动画和播放器都不用更新。' };
+    const reloadHint = await this.appliedHint(pack.id);
+    return { ok: true, pack: pack.id, ...result, changed: bits.length, hint: `已更新：${bits.join('、')}。${reloadHint}` };
   }
 
   /** 在用户选的目录下用自带示例建一个动作库并设为当前库（沿用作者 0.3.9 的做法）。 */
